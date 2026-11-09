@@ -3,6 +3,7 @@ let currentTasks = [];
 let myMissionsData = []; 
 let allClients = [];
 let allTaskNames = []; 
+let showAllMissions = false; // State for the toggle
 
 // Timer State
 let activeTask = null;
@@ -62,7 +63,7 @@ async function doLogout() {
 
 function badge(s) {
   const m = { open: "#4caf50", not_started: "#9e9e9e", overdue: "#e53935" };
-  return `<span style="background:${m[s]};color:#fff;padding:1px 6px;border-radius:4px;font-size:.8em">${s}</span>`;
+  return `<span style="background:${m[s]};color:#fff;padding:1px 6px;border-radius:4px;font-size:.8em">${s.replace('_', ' ')}</span>`;
 }
 
 async function loadMe() {
@@ -83,6 +84,90 @@ async function loadMe() {
     filterMissions(); 
   }
   await loadAllMissions();
+}
+
+// Toggle between Open Only and All Missions
+function toggleMissionView() {
+  showAllMissions = !showAllMissions;
+  const btn = document.getElementById("viewToggleBtn");
+  btn.textContent = showAllMissions ? "Show Open Only" : "Show All Missions";
+  btn.style.background = showAllMissions ? "#e53935" : "#4caf50";
+  filterMissions();
+}
+
+// Render the Read-Only Table View
+async function showTableView() {
+  document.getElementById("listView").style.display = "none";
+  document.getElementById("tableView").style.display = "block";
+  
+  const tbody = document.getElementById("tableBody");
+  tbody.innerHTML = "<tr><td colspan='7' style='padding: 1em; text-align: center;'>Loading tasks...</td></tr>";
+  
+  // 1. Get the currently filtered missions (ignoring the 'showAllMissions' toggle)
+  const query = document.getElementById("clientFilterInput").value.toLowerCase();
+  const fiscalYear = document.getElementById("fiscalYearFilter").value.toLowerCase();
+  const dateFrom = document.getElementById("missionDateFrom").value;
+  const dateTo = document.getElementById("missionDateTo").value;
+  
+  const filtered = myMissionsData.filter(m => {
+    // NOTE: We removed the `!showAllMissions` check here so the table always shows everything.
+    const matchesClient = query === "" || m.CustomerName.toLowerCase().includes(query);
+    const dbFY = m.FiscalYear ? String(m.FiscalYear).toLowerCase() : "";
+    const matchesFiscal = fiscalYear === "" || dbFY.includes(fiscalYear);
+    let matchesDate = true;
+    if (dateFrom && m.WindowEnd < dateFrom) matchesDate = false;
+    if (dateTo && m.WindowStart > dateTo) matchesDate = false;
+    return matchesClient && matchesFiscal && matchesDate;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="padding: 1em; text-align: center;">No missions found.</td></tr>`;
+    return;
+  }
+
+  // 2. Fetch the tasks for all visible missions
+  const allRows = [];
+  
+  for (const m of filtered) {
+    try {
+      const tasks = await api(`/api/missions/${m.MissionID}/tasks`);
+      
+      tasks.forEach(t => {
+        allRows.push(`
+          <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 0.8em; vertical-align: top;">
+              <b>${m.CustomerName}</b><br>
+              <span class="muted">ID ${m.IDHonorary}</span><br>
+              <span class="muted" style="font-size: 0.85em;">FY: ${m.FiscalYear || '-'}</span>
+            </td>
+            <td style="padding: 0.8em; vertical-align: top; color: #FF0000; text-transform: uppercase; font-size: 0.85em;">
+              ${m.Service}
+            </td>
+            <td style="padding: 0.8em; vertical-align: top;">${m.WindowStart} → ${m.WindowEnd}<br>${badge(m.WindowStatus)}</td>
+            <td style="padding: 0.8em; vertical-align: top; font-size: 0.85em; color: #555;">
+              ${t.SectionName || "-"}<br>
+              <i>${t.SubSectionName || "-"}</i>
+            </td>
+            <td style="padding: 0.8em; vertical-align: top; font-weight: bold;">
+              ${t.SubSubSectionName}
+            </td>
+            <td style="padding: 0.8em; vertical-align: top;">${t.AllocatedHours} h</td>
+            <td style="padding: 0.8em; vertical-align: top;">${t.Accomplished ? '✅ Done' : '⏳ Pending'}</td>
+          </tr>
+        `);
+      });
+    } catch (err) {
+      console.error("Failed to load tasks for mission", m.MissionID, err);
+    }
+  }
+
+  // 3. Render all rows
+  tbody.innerHTML = allRows.join("") || `<tr><td colspan="7" style="padding: 1em; text-align: center;">No tasks found.</td></tr>`;
+}
+
+function hideTableView() {
+  document.getElementById("listView").style.display = "block";
+  document.getElementById("tableView").style.display = "none";
 }
 
 // --- CUSTOM SEARCHABLE CLIENT DROPDOWN ---
@@ -132,13 +217,17 @@ function filterMissions() {
   const dateTo = document.getElementById("missionDateTo").value;
   
   const filtered = myMissionsData.filter(m => {
-    // 1. Client Filter
+    // 1. Open Only Filter (if toggle is off)
+    if (!showAllMissions && m.WindowStatus === "overdue") return false;
+
+    // 2. Client Filter
     const matchesClient = query === "" || m.CustomerName.toLowerCase().includes(query);
     
-    // 2. Fiscal Year Filter
-    const matchesFiscal = fiscalYear === "" || (m.FiscalYear && m.FiscalYear.toLowerCase().includes(fiscalYear));
+    // 3. Fiscal Year Filter
+    const dbFY = m.FiscalYear ? String(m.FiscalYear).toLowerCase() : "";
+    const matchesFiscal = fiscalYear === "" || dbFY.includes(fiscalYear);
 
-    // 3. Date Filter
+    // 4. Date Filter
     let matchesDate = true;
     if (dateFrom && m.WindowEnd < dateFrom) matchesDate = false;
     if (dateTo && m.WindowStart > dateTo) matchesDate = false;
@@ -151,7 +240,11 @@ function filterMissions() {
     return;
   }
 
-  document.getElementById("missions").innerHTML = filtered.map(m => `
+  document.getElementById("missions").innerHTML = filtered.map(m => {
+    // Determine if we should hide the buttons (overdue missions in "show all" mode)
+    const isReadOnly = m.WindowStatus === "overdue";
+    
+    return `
     <div class="card">
       <div class="row">
         <div>
@@ -172,11 +265,19 @@ function filterMissions() {
           (${m.PctConsumed || 0}%)</span>
       </div>
       <div>Tasks done: ${m.TasksDone} / ${m.TasksTotal}</div>
-      <button onclick="pick(${m.MissionID})">Open mission</button>
-      <button onclick="exportMission(${m.MissionID}, '${m.CustomerName.replace(/'/g, "\\'")}')">
-        Export to Excel
-      </button>
-    </div>`).join("");
+      
+      ${!isReadOnly ? `
+        <button onclick="pick(${m.MissionID})">Open mission</button>
+        <button onclick="exportMission(${m.MissionID}, '${m.CustomerName.replace(/'/g, "\\'")}')">
+          Export to Excel
+        </button>
+      ` : `
+        <div style="margin-top: 0.5em; color: #888; font-size: 0.85em; font-style: italic;">
+          (Read-only: Mission is overdue)
+        </div>
+      `}
+    </div>`;
+  }).join("");
 }
 
 // --- CUSTOM SEARCHABLE TASK DROPDOWN ---
@@ -236,7 +337,6 @@ function filterTasks() {
     const subSubSection = (t.SubSubSectionName || "").toLowerCase();
     const matchesText = section.includes(query) || subSection.includes(query) || subSubSection.includes(query);
 
-    // 2. Date Filter using Task's Date1 and Date2
     let matchesDate = true;
     if (dateFrom && t.Date2 && t.Date2 < dateFrom) matchesDate = false;
     if (dateTo && t.Date1 && t.Date1 > dateTo) matchesDate = false;
@@ -305,7 +405,7 @@ async function pick(mid) {
 
   document.getElementById("myH").style.display = "none";
   document.getElementById("filterContainer").style.display = "none"; 
-  document.getElementById("missions").style.display = "none";
+  document.getElementById("listView").style.display = "none";
   document.getElementById("allMissionsCard").style.display = "none";
   document.getElementById("missionView").style.display = "block";
   
@@ -507,7 +607,7 @@ function goBack() {
   document.getElementById("missionView").style.display = "none";
   document.getElementById("myH").style.display = "block";
   document.getElementById("filterContainer").style.display = "flex"; 
-  document.getElementById("missions").style.display = "block";
+  document.getElementById("listView").style.display = "block";
   document.getElementById("allMissionsCard").style.display = "block";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

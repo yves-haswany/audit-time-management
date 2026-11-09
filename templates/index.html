@@ -43,39 +43,72 @@
       </span>
     </div>
 
-    <!-- FILTER BY CLIENT, FISCAL YEAR & DATE SECTION -->
-    <div id="filterContainer" style="display:none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 1em; gap: 1.5em;">
-      <h2 id="myH" style="margin: 0;">My missions</h2>
-      
-      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1.5em;">
-        <!-- Client Filter -->
-        <div class="searchable-dropdown" style="position: relative; width: 200px;">
-          <input type="text" id="clientFilterInput" placeholder="Filter by Client..." autocomplete="off"
-                 style="width: 100%; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px;">
-          <div id="clientFilterList" class="dropdown-list" style="display: none;"></div>
-        </div>
-
-        <!-- Fiscal Year Filter -->
-        <div style="display: flex; align-items: center; gap: 0.5em;">
-          <label style="font-size: 0.9em; font-weight: bold;">FY:</label>
-          <input type="text" id="fiscalYearFilter" oninput="filterMissions()" placeholder="e.g. 2026" style="width: 80px; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+    <!-- MAIN LIST VIEW -->
+    <div id="listView">
+      <!-- FILTER BY CLIENT, FISCAL YEAR & DATE SECTION -->
+      <div id="filterContainer" style="display:none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 1em; gap: 1.5em;">
+        <div style="display: flex; align-items: center; gap: 1em;">
+          <h2 id="myH" style="margin: 0;">My missions</h2>
+          <button onclick="toggleMissionView()" id="viewToggleBtn" style="background: #4caf50; font-size: 0.85em; padding: 0.3em 0.6em;">Show All Missions</button>
+          <button onclick="showTableView()" style="background: #2b6cb0; font-size: 0.85em; padding: 0.3em 0.6em;">View as Table</button>
         </div>
         
-        <!-- Date Filter -->
-        <div style="display: flex; align-items: center; gap: 0.5em;">
-          <label style="font-size: 0.9em; font-weight: bold;">From:</label>
-          <input type="date" id="missionDateFrom" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
-          <span style="font-size: 0.9em; font-weight: bold;">To:</span>
-          <input type="date" id="missionDateTo" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1.5em;">
+          <!-- Client Filter -->
+          <div class="searchable-dropdown" style="position: relative; width: 200px;">
+            <input type="text" id="clientFilterInput" placeholder="Filter by Client..." autocomplete="off"
+                   style="width: 100%; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px;">
+            <div id="clientFilterList" class="dropdown-list" style="display: none;"></div>
+          </div>
+
+          <!-- Fiscal Year Filter -->
+          <div style="display: flex; align-items: center; gap: 0.5em;">
+            <label style="font-size: 0.9em; font-weight: bold;">FY:</label>
+            <input type="text" id="fiscalYearFilter" oninput="filterMissions()" placeholder="e.g. 2026" style="width: 80px; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          </div>
+          
+          <!-- Date Filter -->
+          <div style="display: flex; align-items: center; gap: 0.5em;">
+            <label style="font-size: 0.9em; font-weight: bold;">From:</label>
+            <input type="date" id="missionDateFrom" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+            <span style="font-size: 0.9em; font-weight: bold;">To:</span>
+            <input type="date" id="missionDateTo" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          </div>
         </div>
+      </div>
+
+      <div id="missions" style="margin-top: 1em;"></div>
+
+      <div id="allMissionsCard" style="display:none">
+        <h2>All missions — export to Excel</h2>
+        <div id="allMissions"></div>
       </div>
     </div>
 
-    <div id="missions" style="margin-top: 1em;"></div>
-
-    <div id="allMissionsCard" style="display:none">
-      <h2>All missions — export to Excel</h2>
-      <div id="allMissions"></div>
+    <!-- NEW READ-ONLY TABLE VIEW -->
+    <div id="tableView" style="display:none">
+      <div style="margin-bottom: 1em;">
+        <button onclick="hideTableView()" style="background:#666;">← Back to Cards</button>
+      </div>
+      <h2>My Missions (Read-Only)</h2>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1em; background: white;">
+                   <thead>
+            <tr style="background: #eee; text-align: left;">
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Client</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Service</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Dates</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Section / SubSection</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Task Name</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Hours</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody">
+            <!-- Filled by JS -->
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div id="detail"></div>
@@ -87,9 +120,7 @@
       
       <h2>My tasks</h2>
       
-      <!-- FILTER BY TASK SECTION (Text + Date Range) -->
       <div class="card" style="background: #f9f9f9; padding: 0.8em; overflow: visible; z-index: 50; display: flex; flex-wrap: wrap; gap: 2em; align-items: center;">
-        
         <div class="searchable-dropdown" style="position: relative; flex: 1; min-width: 250px;">
           <input type="text" id="taskSearch" placeholder="Search tasks by name, section, or sub-section..." autocomplete="off"
                  style="width: 100%; padding: 0.6em; box-sizing: border-box; font-size: 1em; border: 1px solid #ccc; border-radius: 4px;">
@@ -102,7 +133,6 @@
           <span style="font-size: 0.9em; font-weight: bold;">To:</span>
           <input type="date" id="taskDateTo" onchange="filterTasks()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
         </div>
-
       </div>
       
       <div id="taskList"></div>
