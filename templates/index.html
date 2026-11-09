@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Audit Time Management</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="loginContainer">
+    <h1 style="margin-top: 0; text-align: center;">Audit Time Management</h1>
+    <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
+      <input id="u" placeholder="Username" autocomplete="username" required>
+      <input id="p" type="password" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit">Login</button>
+    </form>
+    <p class="muted" style="text-align: center;">Try lee / lee · aka / aka · mce / mce · min / min · agn / agn</p>
+  </div>
+
+  <div id="app" style="display:none">
+    <h1>Audit Time Management</h1>
+    <div class="row">
+      <b id="who"></b>
+      <button onclick="doLogout()">Logout</button>
+    </div>
+
+    <div id="activeTimerBar" class="card" style="display:none; background: #e3f2fd; border-color: #90caf9; position: sticky; top: 10px; z-index: 100;">
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <b style="color: #1565c0;">⏱ Active Task:</b> <span id="timerTaskName"></span>
+        </div>
+        <div style="font-size: 1.2em; font-weight: bold;">
+          <span id="timerDisplay">00:00:00</span>
+        </div>
+        <button onclick="stopTimer()" style="background: #e53935;">Stop Timer</button>
+      </div>
+      <div id="timerAlert" class="muted" style="margin-top: 0.5em; display: none;"></div>
+    </div>
+
+    <div id="noWork" class="card" style="display:none">
+      <b>No missions assigned to you yet.</b><br>
+      <span class="muted">
+        Logged in as <span id="noWorkWho"></span>.
+      </span>
+    </div>
+
+    <!-- FILTER BY CLIENT, FISCAL YEAR & DATE SECTION -->
+    <div id="filterContainer" style="display:none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 1em; gap: 1.5em;">
+      <h2 id="myH" style="margin: 0;">My missions</h2>
+      
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1.5em;">
+        <!-- Client Filter -->
+        <div class="searchable-dropdown" style="position: relative; width: 200px;">
+          <input type="text" id="clientFilterInput" placeholder="Filter by Client..." autocomplete="off"
+                 style="width: 100%; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px;">
+          <div id="clientFilterList" class="dropdown-list" style="display: none;"></div>
+        </div>
+
+        <!-- Fiscal Year Filter -->
+        <div style="display: flex; align-items: center; gap: 0.5em;">
+          <label style="font-size: 0.9em; font-weight: bold;">FY:</label>
+          <input type="text" id="fiscalYearFilter" oninput="filterMissions()" placeholder="e.g. 2026" style="width: 80px; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        
+        <!-- Date Filter -->
+        <div style="display: flex; align-items: center; gap: 0.5em;">
+          <label style="font-size: 0.9em; font-weight: bold;">From:</label>
+          <input type="date" id="missionDateFrom" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <span style="font-size: 0.9em; font-weight: bold;">To:</span>
+          <input type="date" id="missionDateTo" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+      </div>
+    </div>
+
+    <div id="missions" style="margin-top: 1em;"></div>
+
+    <div id="allMissionsCard" style="display:none">
+      <h2>All missions — export to Excel</h2>
+      <div id="allMissions"></div>
+    </div>
+
+    <div id="detail"></div>
+
+    <div id="missionView" style="display:none">
+      <div style="margin-bottom: 1em;">
+        <button onclick="goBack()" style="background:#666;">← Back to missions</button>
+      </div>
+      
+      <h2>My tasks</h2>
+      
+      <!-- FILTER BY TASK SECTION (Text + Date Range) -->
+      <div class="card" style="background: #f9f9f9; padding: 0.8em; overflow: visible; z-index: 50; display: flex; flex-wrap: wrap; gap: 2em; align-items: center;">
+        
+        <div class="searchable-dropdown" style="position: relative; flex: 1; min-width: 250px;">
+          <input type="text" id="taskSearch" placeholder="Search tasks by name, section, or sub-section..." autocomplete="off"
+                 style="width: 100%; padding: 0.6em; box-sizing: border-box; font-size: 1em; border: 1px solid #ccc; border-radius: 4px;">
+          <div id="taskSearchList" class="dropdown-list" style="display: none;"></div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 0.5em;">
+          <label style="font-size: 0.9em; font-weight: bold;">From:</label>
+          <input type="date" id="taskDateFrom" onchange="filterTasks()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <span style="font-size: 0.9em; font-weight: bold;">To:</span>
+          <input type="date" id="taskDateTo" onchange="filterTasks()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+
+      </div>
+      
+      <div id="taskList"></div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
