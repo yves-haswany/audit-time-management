@@ -7,23 +7,16 @@ from core.database import connect
 from datetime import datetime
 import os
 
-from scripts.export_mission import export_mission_to_path
+from scripts.export_timelog import log_start_time, log_end_time
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
-# Create the exports directory if it doesn't exist
-EXPORT_DIR = "exports"
-os.makedirs(EXPORT_DIR, exist_ok=True)
-
-# New Pydantic model to accept the job description on stop
 class StopTaskIn(BaseModel):
     JobDesc: str
 
-# IMPORTANT: This must be placed BEFORE the /{task_id} routes
 @router.get("/active")
 def get_active_task(user=Depends(current_user)):
     c = connect()
-    # Find the open session
     row = c.execute(
         """
         SELECT ws.LoginTime, t.*
@@ -42,7 +35,6 @@ def get_active_task(user=Depends(current_user)):
     data = dict(row)
     data["active"] = True
     
-    # Calculate the total time already spent on this task across ALL sessions
     total_row = c.execute(
         """
         SELECT SUM(
@@ -56,64 +48,85 @@ def get_active_task(user=Depends(current_user)):
     
     c.close()
 
-    # total_hours is the time spent BEFORE this current session started
     previous_hours = total_row["total_hours"] if total_row and total_row["total_hours"] else 0
-    
-    # We subtract the current session's elapsed time from the total so we can pass
-    # just the "previous" time to the frontend.
     login_dt = datetime.fromisoformat(data["LoginTime"])
     current_session_hours = (datetime.utcnow() - login_dt).total_seconds() / 3600
     
     data["PreviousHours"] = max(0, previous_hours - current_session_hours)
-    
     return data
 
 @router.post("/{task_id}/start")
 def start_task(task_id: int, user=Depends(current_user)):
     result = task_service.start(user["EmployeeID"], task_id)
     
-    # Auto-export on start
     c = connect()
-    mid = c.execute("SELECT MissionID FROM MissionTask WHERE TaskID = ?", (task_id,)).fetchone()
+    # Fetch Section, SubSection, and SubSubSection
+    info = c.execute("""
+        SELECT m.IDHonorary, m.CustomerName, m.Service, 
+               t.SectionName, t.SubSectionName, t.SubSubSectionName 
+        FROM MissionTask t 
+        JOIN Mission m ON m.MissionID = t.MissionID 
+        WHERE t.TaskID = ?
+    """, (task_id,)).fetchone()
+    
+    session = c.execute("""
+        SELECT SessionID, LoginTime FROM WorkSession 
+        WHERE EmployeeID = ? AND LogoutTime IS NULL ORDER BY SessionID DESC LIMIT 1
+    """, (user["EmployeeID"],)).fetchone()
     c.close()
-    if mid:
-        out_path = os.path.join(EXPORT_DIR, f"mission_{mid['MissionID']}.xlsx")
-        try:
-            export_mission_to_path(mid["MissionID"], out_path)
-        except Exception as e:
-            print(f"Auto-export failed on start: {e}")
+
+    if info and session:
+        # Pass the new fields to the logger
+        record_id = log_start_time(
+            user["EmployeeName"], info["IDHonorary"], info["CustomerName"], info["Service"],
+            info["SectionName"], info["SubSectionName"], info["SubSubSectionName"],
+            session["LoginTime"]
+        )
+        c = connect()
+        c.execute("UPDATE WorkSession SET TimeLogID = ? WHERE SessionID = ?", (record_id, session["SessionID"]))
+        c.commit()
+        c.close()
 
     return result
 
 @router.post("/{task_id}/stop")
 def stop_task(task_id: int, body: StopTaskIn, user=Depends(current_user)):
     c = connect()
+    now = datetime.utcnow().replace(microsecond=0).isoformat()
     
-    # Update the open session with LogoutTime and JobDesc
-    c.execute(
-        """UPDATE WorkSession SET LogoutTime = ?, JobDesc = ?
-           WHERE EmployeeID = ? AND LogoutTime IS NULL""",
-        (datetime.utcnow().replace(microsecond=0).isoformat(), body.JobDesc, user["EmployeeID"]),
-    )
-    
-    mid = c.execute("SELECT MissionID FROM MissionTask WHERE TaskID = ?", (task_id,)).fetchone()
+    # Get the session that is being closed
+    session = c.execute("""
+        SELECT SessionID, LoginTime, TimeLogID 
+        FROM WorkSession 
+        WHERE EmployeeID = ? AND LogoutTime IS NULL
+    """, (user["EmployeeID"],)).fetchone()
+
+    if session:
+        # Update DB
+        c.execute(
+            """UPDATE WorkSession SET LogoutTime = ?, JobDesc = ?
+               WHERE SessionID = ?""",
+            (now, body.JobDesc, session["SessionID"]),
+        )
+        
+        # Calculate hours for Excel
+        login_dt = datetime.fromisoformat(session["LoginTime"])
+        logout_dt = datetime.fromisoformat(now)
+        hours_logged = (logout_dt - login_dt).total_seconds() / 3600.0
+        
+        # Update the Excel log
+        if session["TimeLogID"]:
+            log_end_time(session["TimeLogID"], now, hours_logged, body.JobDesc)
+
     c.commit()
     c.close()
-    
-    # Auto-export on stop
-    if mid:
-        out_path = os.path.join(EXPORT_DIR, f"mission_{mid['MissionID']}.xlsx")
-        try:
-            export_mission_to_path(mid["MissionID"], out_path)
-        except Exception as e:
-            print(f"Auto-export failed on stop: {e}")
-
     return {"ok": True}
 
 @router.patch("/{task_id}")
 def update_task(task_id: int, body: TaskUpdateIn, user=Depends(current_user)):
     changes = body.model_dump(exclude_none=True)
     return task_service.update(user["EmployeeID"], task_id, changes)
+
 @router.get("/missions/{mid}/tasks")
 def mission_tasks(mid: int, user=Depends(current_user)):
     c = connect()

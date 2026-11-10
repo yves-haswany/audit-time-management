@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS WorkSession(
   TaskID     INTEGER REFERENCES MissionTask(TaskID),
   LoginTime  TEXT NOT NULL,
   LogoutTime TEXT,
+  TimeLogID INTEGER, 
   JobDesc    TEXT);
 
 CREATE TABLE IF NOT EXISTS Token(

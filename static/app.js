@@ -103,14 +103,12 @@ async function showTableView() {
   const tbody = document.getElementById("tableBody");
   tbody.innerHTML = "<tr><td colspan='7' style='padding: 1em; text-align: center;'>Loading tasks...</td></tr>";
   
-  // 1. Get the currently filtered missions (ignoring the 'showAllMissions' toggle)
   const query = document.getElementById("clientFilterInput").value.toLowerCase();
   const fiscalYear = document.getElementById("fiscalYearFilter").value.toLowerCase();
   const dateFrom = document.getElementById("missionDateFrom").value;
   const dateTo = document.getElementById("missionDateTo").value;
   
   const filtered = myMissionsData.filter(m => {
-    // NOTE: We removed the `!showAllMissions` check here so the table always shows everything.
     const matchesClient = query === "" || m.CustomerName.toLowerCase().includes(query);
     const dbFY = m.FiscalYear ? String(m.FiscalYear).toLowerCase() : "";
     const matchesFiscal = fiscalYear === "" || dbFY.includes(fiscalYear);
@@ -125,7 +123,6 @@ async function showTableView() {
     return;
   }
 
-  // 2. Fetch the tasks for all visible missions
   const allRows = [];
   
   for (const m of filtered) {
@@ -161,7 +158,6 @@ async function showTableView() {
     }
   }
 
-  // 3. Render all rows
   tbody.innerHTML = allRows.join("") || `<tr><td colspan="7" style="padding: 1em; text-align: center;">No tasks found.</td></tr>`;
 }
 
@@ -217,21 +213,13 @@ function filterMissions() {
   const dateTo = document.getElementById("missionDateTo").value;
   
   const filtered = myMissionsData.filter(m => {
-    // 1. Open Only Filter (if toggle is off)
     if (!showAllMissions && m.WindowStatus === "overdue") return false;
-
-    // 2. Client Filter
     const matchesClient = query === "" || m.CustomerName.toLowerCase().includes(query);
-    
-    // 3. Fiscal Year Filter
     const dbFY = m.FiscalYear ? String(m.FiscalYear).toLowerCase() : "";
     const matchesFiscal = fiscalYear === "" || dbFY.includes(fiscalYear);
-
-    // 4. Date Filter
     let matchesDate = true;
     if (dateFrom && m.WindowEnd < dateFrom) matchesDate = false;
     if (dateTo && m.WindowStart > dateTo) matchesDate = false;
-    
     return matchesClient && matchesFiscal && matchesDate;
   });
 
@@ -241,9 +229,7 @@ function filterMissions() {
   }
 
   document.getElementById("missions").innerHTML = filtered.map(m => {
-    // Determine if we should hide the buttons (overdue missions in "show all" mode)
     const isReadOnly = m.WindowStatus === "overdue";
-    
     return `
     <div class="card">
       <div class="row">
@@ -430,13 +416,19 @@ async function pick(mid) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// UPDATED: Filters out accomplished tasks and only shows the Accomplished checkbox
 function renderTasks(tasks) {
   const container = document.getElementById("taskList");
-  if (tasks.length === 0) {
-    container.innerHTML = `<p class="muted">No tasks found.</p>`;
+  
+  // Filter out accomplished tasks
+  const activeTasks = tasks.filter(t => !t.Accomplished);
+
+  if (activeTasks.length === 0) {
+    container.innerHTML = `<p class="muted">No active tasks found.</p>`;
     return;
   }
-  container.innerHTML = tasks.map(t => `
+
+  container.innerHTML = activeTasks.map(t => `
     <div class="card" style="${activeTask && activeTask.TaskID === t.TaskID ? 'border-color: #2b6cb0; border-width: 2px;' : ''}">
       <div class="muted">${t.SectionName || ""} / ${t.SubSectionName || ""}</div>
       <b>${t.SubSubSectionName}</b><br>
@@ -444,19 +436,42 @@ function renderTasks(tasks) {
       ${t.Signindate ? `<br><span class="muted">Sign in ${t.Signindate} ${t.Signintime || ""}`
         + (t.Signoutdate ? ` · out ${t.Signoutdate} ${t.Signouttime || ""}` : " · still open")
         + `</span>` : ""}
-      <div>
+      <div style="margin-top: 0.5em;">
         ${activeTask && activeTask.TaskID === t.TaskID 
           ? `<button onclick="stopTimer()" style="background:#e53935;">Stop Timer</button>`
           : `<button onclick='startTask(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Start timer</button>`
         }
-        <label><input type="checkbox" ${t.Launched ? "checked" : ""}
-          onchange="upd(${t.TaskID}, 'Launched', this.checked)"> Launched</label>
-        <label><input type="checkbox" ${t.Suspended ? "checked" : ""}
-          onchange="upd(${t.TaskID}, 'Suspended', this.checked)"> Suspended</label>
-        <label><input type="checkbox" ${t.Accomplished ? "checked" : ""}
-          onchange="upd(${t.TaskID}, 'Accomplished', this.checked)"> Accomplished</label>
+        <label style="margin-left: 1em;"><input type="checkbox" 
+          onchange="confirmAccomplished(${t.TaskID}, this)"> Accomplished</label>
       </div>
     </div>`).join("");
+}
+
+// NEW: Confirm before marking accomplished
+async function confirmAccomplished(tid, checkbox) {
+  if (checkbox.checked) {
+    if (confirm("Are you sure this task is fully accomplished?")) {
+      await upd(tid, 'Accomplished', true);
+    } else {
+      checkbox.checked = false;
+    }
+  }
+}
+
+// UPDATED: Handle hiding the task when marked accomplished
+async function upd(tid, field, value) {
+  await api("/api/tasks/" + tid, {
+    method: "PATCH",
+    body: JSON.stringify({ [field]: value }),
+  });
+  
+  if (field === "Accomplished" && value === true) {
+    // Remove it from the local array so it disappears immediately
+    currentTasks = currentTasks.map(t => 
+      t.TaskID === tid ? { ...t, Accomplished: true } : t
+    );
+    renderTasks(currentTasks);
+  }
 }
 
 async function checkActiveTimer() {
