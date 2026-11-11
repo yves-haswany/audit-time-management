@@ -10,6 +10,7 @@ import os
 from scripts.export_timelog import log_start_time, log_end_time
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+mission_router = APIRouter(prefix="/api/missions", tags=["missions"])
 
 class StopTaskIn(BaseModel):
     JobDesc: str
@@ -60,7 +61,6 @@ def start_task(task_id: int, user=Depends(current_user)):
     result = task_service.start(user["EmployeeID"], task_id)
     
     c = connect()
-    # Fetch Section, SubSection, and SubSubSection
     info = c.execute("""
         SELECT m.IDHonorary, m.CustomerName, m.Service, 
                t.SectionName, t.SubSectionName, t.SubSubSectionName 
@@ -76,7 +76,6 @@ def start_task(task_id: int, user=Depends(current_user)):
     c.close()
 
     if info and session:
-        # Pass the new fields to the logger
         record_id = log_start_time(
             user["EmployeeName"], info["IDHonorary"], info["CustomerName"], info["Service"],
             info["SectionName"], info["SubSectionName"], info["SubSubSectionName"],
@@ -94,7 +93,6 @@ def stop_task(task_id: int, body: StopTaskIn, user=Depends(current_user)):
     c = connect()
     now = datetime.utcnow().replace(microsecond=0).isoformat()
     
-    # Get the session that is being closed
     session = c.execute("""
         SELECT SessionID, LoginTime, TimeLogID 
         FROM WorkSession 
@@ -102,19 +100,16 @@ def stop_task(task_id: int, body: StopTaskIn, user=Depends(current_user)):
     """, (user["EmployeeID"],)).fetchone()
 
     if session:
-        # Update DB
         c.execute(
             """UPDATE WorkSession SET LogoutTime = ?, JobDesc = ?
                WHERE SessionID = ?""",
             (now, body.JobDesc, session["SessionID"]),
         )
         
-        # Calculate hours for Excel
         login_dt = datetime.fromisoformat(session["LoginTime"])
         logout_dt = datetime.fromisoformat(now)
         hours_logged = (logout_dt - login_dt).total_seconds() / 3600.0
         
-        # Update the Excel log
         if session["TimeLogID"]:
             log_end_time(session["TimeLogID"], now, hours_logged, body.JobDesc)
 
@@ -127,15 +122,31 @@ def update_task(task_id: int, body: TaskUpdateIn, user=Depends(current_user)):
     changes = body.model_dump(exclude_none=True)
     return task_service.update(user["EmployeeID"], task_id, changes)
 
-@router.get("/missions/{mid}/tasks")
+# CHANGED: Using mission_router here to match the frontend URL /api/missions/{mid}/tasks
+@mission_router.get("/{mid}/tasks")
 def mission_tasks(mid: int, user=Depends(current_user)):
     c = connect()
-    rows = c.execute("""SELECT t.*, ts.Signindate, ts.Signintime,
-                               ts.Signoutdate, ts.Signouttime
-                        FROM MissionTask t
-                        LEFT JOIN TaskSignTimes ts ON ts.TaskID=t.TaskID
-                        WHERE t.MissionID=? AND t.EmployeeID=?
-                        ORDER BY t.TaskID""",
-                     (mid, user["EmployeeID"])).fetchall()
+    
+    classification = str(user.get("Classification", "")).strip().lower()
+    
+    if classification in ["team leader", "administrator"]:
+        rows = c.execute("""
+            SELECT t.*, t.TeamMemberName as EmployeeName, 
+                   ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
+            FROM MissionTask t
+            LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
+            WHERE t.MissionID = ?
+            ORDER BY t.TaskID
+        """, (mid,)).fetchall()
+    else:
+        rows = c.execute("""
+            SELECT t.*, t.TeamMemberName as EmployeeName, 
+                   ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
+            FROM MissionTask t
+            LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
+            WHERE t.MissionID = ? AND t.EmployeeID = ?
+            ORDER BY t.TaskID
+        """, (mid, user["EmployeeID"])).fetchall()
+        
     c.close()
     return [dict(r) for r in rows]

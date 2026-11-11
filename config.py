@@ -9,7 +9,9 @@ DATA_DIR = BASE_DIR / "data"
 DB_DIR   = BASE_DIR / "db"
 DB_DIR.mkdir(exist_ok=True)
 
-EMP_XLS = DATA_DIR / "Yves_TemplateEmployee.xls"
+# config.py
+TEAMS_XLS = DATA_DIR / "Yves_TemplateTeams.xls"
+EMP_XLS = DATA_DIR / "Yves_TemplateEmployee(2).xls"
 MIS_XLS = DATA_DIR / "Yves_TemplateMission.xls(2).xlsx"
 DB_PATH = DB_DIR / "audit.db"
 

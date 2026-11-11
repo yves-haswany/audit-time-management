@@ -21,6 +21,10 @@
     <div class="row">
       <b id="who"></b>
       <button onclick="doLogout()">Logout</button>
+      
+      <!-- NEW BUTTONS -->
+      <button onclick="showTimeLogs()" style="background: #2b6cb0; margin-left: auto;">View Time Logs</button>
+      <button onclick="downloadTimeLogs()" style="background: #e67e22; margin-left: 10px;">Download Time Logs</button>
     </div>
 
     <div id="activeTimerBar" class="card" style="display:none; background: #e3f2fd; border-color: #90caf9; position: sticky; top: 10px; z-index: 100;">
@@ -43,6 +47,32 @@
       </span>
     </div>
 
+    <!-- NEW: TIME LOGS TABLE VIEW -->
+    <div id="timeLogsView" style="display:none; background: white; padding: 1em; margin-top: 1em; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+      <div class="row" style="justify-content: space-between; margin-bottom: 1em;">
+        <h2 style="margin: 0;">Time Logs</h2>
+        <button onclick="hideTimeLogs()" style="background:#666;">← Back to Missions</button>
+      </div>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="background: #eee; text-align: left;">
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Date</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Employee</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Task</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Sign In</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Sign Out</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Hours</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Description</th>
+            </tr>
+          </thead>
+          <tbody id="timeLogsTableBody">
+            <!-- Filled by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- MAIN LIST VIEW -->
     <div id="listView">
       <!-- FILTER BY CLIENT, FISCAL YEAR & DATE SECTION -->
@@ -54,20 +84,15 @@
         </div>
         
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1.5em;">
-          <!-- Client Filter -->
           <div class="searchable-dropdown" style="position: relative; width: 200px;">
             <input type="text" id="clientFilterInput" placeholder="Filter by Client..." autocomplete="off"
                    style="width: 100%; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px;">
             <div id="clientFilterList" class="dropdown-list" style="display: none;"></div>
           </div>
-
-          <!-- Fiscal Year Filter -->
           <div style="display: flex; align-items: center; gap: 0.5em;">
             <label style="font-size: 0.9em; font-weight: bold;">FY:</label>
             <input type="text" id="fiscalYearFilter" oninput="filterMissions()" placeholder="e.g. 2026" style="width: 80px; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
           </div>
-          
-          <!-- Date Filter -->
           <div style="display: flex; align-items: center; gap: 0.5em;">
             <label style="font-size: 0.9em; font-weight: bold;">From:</label>
             <input type="date" id="missionDateFrom" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
@@ -85,7 +110,8 @@
       </div>
     </div>
 
-    <!-- NEW READ-ONLY TABLE VIEW -->
+    <!-- READ-ONLY MISSION TABLE VIEW -->
+        <!-- READ-ONLY MISSION TABLE VIEW -->
     <div id="tableView" style="display:none">
       <div style="margin-bottom: 1em;">
         <button onclick="hideTableView()" style="background:#666;">← Back to Cards</button>
@@ -93,10 +119,11 @@
       <h2>My Missions (Read-Only)</h2>
       <div style="overflow-x: auto;">
         <table style="width: 100%; border-collapse: collapse; margin-top: 1em; background: white;">
-                   <thead>
+          <thead>
             <tr style="background: #eee; text-align: left;">
               <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Client</th>
               <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Service</th>
+              <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Employee</th> <!-- NEW COLUMN -->
               <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Dates</th>
               <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Section / SubSection</th>
               <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Task Name</th>
@@ -104,9 +131,7 @@
               <th style="padding: 0.8em; border-bottom: 2px solid #ccc;">Status</th>
             </tr>
           </thead>
-          <tbody id="tableBody">
-            <!-- Filled by JS -->
-          </tbody>
+          <tbody id="tableBody"></tbody>
         </table>
       </div>
     </div>

@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS Employee(
   Username     TEXT NOT NULL,
   PasswordHash TEXT NOT NULL,
   IsActive     INTEGER DEFAULT 1,
-  IsTeamLead   INTEGER DEFAULT 0);
+  IsTeamLead   INTEGER DEFAULT 0,
+  Classification TEXT,
+  TeamLeader   TEXT); -- NEW: Stores the name of the Team Leader
 CREATE UNIQUE INDEX IF NOT EXISTS ux_emp_uname ON Employee(LOWER(Username));
 
 CREATE TABLE IF NOT EXISTS Mission(

@@ -1,9 +1,9 @@
 """Import employees and missions from the Excel source files."""
 import re
-
+import os
 import pandas as pd
 
-from config import EMP_XLS, MIS_XLS, ALIASES, MISSING_EMPLOYEES
+from config import EMP_XLS, MIS_XLS, TEAMS_XLS, ALIASES, MISSING_EMPLOYEES
 from core.database import connect
 from core.security import hash_password
 
@@ -13,23 +13,42 @@ def _norm(s: str) -> str:
 
 
 def load_data(report: list) -> None:
-    """Idempotently import the Excel files. Appends human-readable lines to
-    `report` (list of (level, who, message) tuples)."""
     c = connect()
 
     # ---------- Employees ----------
     if c.execute("SELECT COUNT(*) FROM Employee").fetchone()[0] == 0:
-        df = pd.read_excel(EMP_XLS)
+        try:
+            df = pd.read_excel(EMP_XLS)
+        except Exception as e:
+            raise RuntimeError(f"Could not read the Excel file: {e}")
+
+        print(f"\n[DEBUG] Reading file: {EMP_XLS}")
+        print(f"[DEBUG] Columns found: {df.columns.tolist()}\n")
+
+        if "Username" not in df.columns:
+            raise RuntimeError(
+                f"ERROR: The file '{EMP_XLS.name}' is missing the 'Username' column! "
+                f"Columns found: {df.columns.tolist()}"
+            )
+
+        class_col = next((col for col in df.columns if str(col).strip().lower() == "classification"), None)
+
         for _, r in df.iterrows():
             name  = str(r["EmployeeName"]).strip()
             login = str(r["Login"]).strip()
             uname = str(r["Username"]).strip()
+            
+            classification = ""
+            if class_col and pd.notna(r[class_col]):
+                classification = str(r[class_col]).strip()
+
             c.execute(
                 """INSERT OR IGNORE INTO Employee
-                   (EmployeeName, LoginCode, Username, PasswordHash)
-                   VALUES (?,?,?,?)""",
-                (name, login, uname, hash_password(login)),
+                   (EmployeeName, LoginCode, Username, PasswordHash, Classification)
+                   VALUES (?,?,?,?,?)""",
+                (name, login, uname, hash_password(login), classification),
             )
+            
         for e in MISSING_EMPLOYEES:
             c.execute(
                 """INSERT OR IGNORE INTO Employee
@@ -40,6 +59,22 @@ def load_data(report: list) -> None:
             report.append(("INFO", e["name"],
                            f"created employee (username {e['username']}) — confirm with HR"))
 
+    # ---------- Team Leader Assignments ----------
+    if os.path.exists(TEAMS_XLS):
+        teams_df = pd.read_excel(TEAMS_XLS)
+        print(f"\n[DEBUG] Reading teams from: {TEAMS_XLS}")
+        for _, r in teams_df.iterrows():
+            leader = str(r["Team Leader"]).strip()
+            member = str(r["Team Member"]).strip()
+            
+            # Update the TeamLeader column for the employee
+            c.execute(
+                "UPDATE Employee SET TeamLeader = ? WHERE LOWER(EmployeeName) = LOWER(?)",
+                (leader, member)
+            )
+    else:
+        print(f"\n[WARNING] Teams file not found at {TEAMS_XLS}. Team Leader assignments skipped.")
+
     emp = {_norm(r["EmployeeName"]): r["EmployeeID"]
            for r in c.execute("SELECT EmployeeID, EmployeeName FROM Employee")}
 
@@ -47,14 +82,8 @@ def load_data(report: list) -> None:
     if c.execute("SELECT COUNT(*) FROM MissionTask").fetchone()[0] == 0:
         df = pd.read_excel(MIS_XLS, sheet_name="Yves_TemplateMission")
         
-        # PRINT THIS SO WE CAN SEE EXACTLY WHAT PANDAS READS
-        print("Columns found in Excel:", df.columns.tolist())
-
-        # Flexible column matcher for 'Fiscal year'
         fiscal_col = next((col for col in df.columns if str(col).strip().lower() == "fiscal year"), None)
-        if not fiscal_col:
-            print("WARNING: 'Fiscal year' column not found in Excel file!")
-
+        
         for excel_row, r in df.iterrows():
             ws_str = str(r["Date1"])[:10]
             we_str = str(r["Date2"])[:10]

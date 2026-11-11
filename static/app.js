@@ -34,7 +34,8 @@ async function doLogin(event) {
     });
     token = r.token;
     localStorage.token = token;
-    who.textContent = r.employee.EmployeeName;
+    
+    who.textContent = r.employee.EmployeeName + (r.employee.Classification ? ` (${r.employee.Classification})` : "");
     
     document.getElementById("loginContainer").style.display = "none";
     document.getElementById("app").style.display = "block";
@@ -66,6 +67,77 @@ function badge(s) {
   return `<span style="background:${m[s]};color:#fff;padding:1px 6px;border-radius:4px;font-size:.8em">${s.replace('_', ' ')}</span>`;
 }
 
+async function downloadTimeLogs() {
+  try {
+    const r = await fetch("/api/admin/download-timelogs", {
+      headers: { "Authorization": "Bearer " + token },
+    });
+    
+    if (!r.ok) {
+        const err = await r.json();
+        throw Error(err.detail || "Failed to download file");
+    }
+    
+    let filename = "TimeLogs.xlsx";
+    const cd = r.headers.get("Content-Disposition") || "";
+    const match = cd.match(/filename="([^"]+)"/);
+    if (match) filename = match[1];
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 100);
+  } catch (e) {
+    alert("Download failed: " + e.message);
+  }
+}
+
+async function showTimeLogs() {
+  document.getElementById("listView").style.display = "none";
+  document.getElementById("timeLogsView").style.display = "block";
+  
+  const tbody = document.getElementById("timeLogsTableBody");
+  tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 2em;">Loading logs...</td></tr>`;
+
+  try {
+    const logs = await api("/api/admin/time-logs");
+    
+    if (logs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 2em;">No logs found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = logs.map(l => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 0.8em;">${l.Date || '-'}</td>
+        <td style="padding: 0.8em;"><b>${l.Employee}</b></td>
+        <td style="padding: 0.8em;">${l["Task Name"] || '-'}</td>
+        <td style="padding: 0.8em;">${l["Sign In Time"] || '-'}</td>
+        <td style="padding: 0.8em;">${l["Sign Out Time"] || '-'}</td>
+        <td style="padding: 0.8em;">${l["Hours Logged"] || '0'}</td>
+        <td style="padding: 0.8em;">${l["Job Description"] || '-'}</td>
+      </tr>
+    `).join("");
+    
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 2em; color: red;">Failed to load: ${e.message}</td></tr>`;
+  }
+}
+
+function hideTimeLogs() {
+  document.getElementById("timeLogsView").style.display = "none";
+  document.getElementById("listView").style.display = "block";
+}
+
 async function loadMe() {
   const sum = await api("/api/me/summary");
   if (!sum.HasWork) {
@@ -86,7 +158,6 @@ async function loadMe() {
   await loadAllMissions();
 }
 
-// Toggle between Open Only and All Missions
 function toggleMissionView() {
   showAllMissions = !showAllMissions;
   const btn = document.getElementById("viewToggleBtn");
@@ -95,13 +166,12 @@ function toggleMissionView() {
   filterMissions();
 }
 
-// Render the Read-Only Table View
 async function showTableView() {
   document.getElementById("listView").style.display = "none";
   document.getElementById("tableView").style.display = "block";
   
   const tbody = document.getElementById("tableBody");
-  tbody.innerHTML = "<tr><td colspan='7' style='padding: 1em; text-align: center;'>Loading tasks...</td></tr>";
+  tbody.innerHTML = "<tr><td colspan='8' style='padding: 1em; text-align: center;'>Loading tasks...</td></tr>";
   
   const query = document.getElementById("clientFilterInput").value.toLowerCase();
   const fiscalYear = document.getElementById("fiscalYearFilter").value.toLowerCase();
@@ -119,7 +189,7 @@ async function showTableView() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="padding: 1em; text-align: center;">No missions found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="padding: 1em; text-align: center;">No missions found.</td></tr>`;
     return;
   }
 
@@ -127,9 +197,12 @@ async function showTableView() {
   
   for (const m of filtered) {
     try {
-      const tasks = await api(`/api/missions/${m.MissionID}/tasks`);
+      // UPDATED URL
+      const tasks = await api(`/api/me/missions/${m.MissionID}/tasks`);
       
       tasks.forEach(t => {
+        const empName = t.EmployeeName || t.TeamMemberName || 'Unknown';
+        
         allRows.push(`
           <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 0.8em; vertical-align: top;">
@@ -139,6 +212,9 @@ async function showTableView() {
             </td>
             <td style="padding: 0.8em; vertical-align: top; color: #FF0000; text-transform: uppercase; font-size: 0.85em;">
               ${m.Service}
+            </td>
+            <td style="padding: 0.8em; vertical-align: top; font-size: 0.85em; font-weight: bold;">
+              ${empName}
             </td>
             <td style="padding: 0.8em; vertical-align: top;">${m.WindowStart} → ${m.WindowEnd}<br>${badge(m.WindowStatus)}</td>
             <td style="padding: 0.8em; vertical-align: top; font-size: 0.85em; color: #555;">
@@ -158,7 +234,7 @@ async function showTableView() {
     }
   }
 
-  tbody.innerHTML = allRows.join("") || `<tr><td colspan="7" style="padding: 1em; text-align: center;">No tasks found.</td></tr>`;
+  tbody.innerHTML = allRows.join("") || `<tr><td colspan="8" style="padding: 1em; text-align: center;">No tasks found.</td></tr>`;
 }
 
 function hideTableView() {
@@ -166,7 +242,6 @@ function hideTableView() {
   document.getElementById("tableView").style.display = "none";
 }
 
-// --- CUSTOM SEARCHABLE CLIENT DROPDOWN ---
 function setupClientDropdown() {
   const input = document.getElementById("clientFilterInput");
   const list = document.getElementById("clientFilterList");
@@ -266,7 +341,6 @@ function filterMissions() {
   }).join("");
 }
 
-// --- CUSTOM SEARCHABLE TASK DROPDOWN ---
 function setupTaskDropdown() {
   const input = document.getElementById("taskSearch");
   const list = document.getElementById("taskSearchList");
@@ -332,7 +406,6 @@ function filterTasks() {
   
   renderTasks(filtered);
 }
-// --- END CUSTOM DROPDOWNS ---
 
 async function loadAllMissions() {
   try {
@@ -400,7 +473,8 @@ async function pick(mid) {
   document.getElementById("taskDateFrom").value = "";
   document.getElementById("taskDateTo").value = "";
 
-  currentTasks = await api(`/api/missions/${mid}/tasks`);
+  // UPDATED URL
+  currentTasks = await api(`/api/me/missions/${mid}/tasks`);
   
   const taskNamesSet = new Set();
   currentTasks.forEach(t => {
@@ -416,11 +490,8 @@ async function pick(mid) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// UPDATED: Filters out accomplished tasks and only shows the Accomplished checkbox
 function renderTasks(tasks) {
   const container = document.getElementById("taskList");
-  
-  // Filter out accomplished tasks
   const activeTasks = tasks.filter(t => !t.Accomplished);
 
   if (activeTasks.length === 0) {
@@ -447,7 +518,6 @@ function renderTasks(tasks) {
     </div>`).join("");
 }
 
-// NEW: Confirm before marking accomplished
 async function confirmAccomplished(tid, checkbox) {
   if (checkbox.checked) {
     if (confirm("Are you sure this task is fully accomplished?")) {
@@ -458,7 +528,6 @@ async function confirmAccomplished(tid, checkbox) {
   }
 }
 
-// UPDATED: Handle hiding the task when marked accomplished
 async function upd(tid, field, value) {
   await api("/api/tasks/" + tid, {
     method: "PATCH",
@@ -466,7 +535,6 @@ async function upd(tid, field, value) {
   });
   
   if (field === "Accomplished" && value === true) {
-    // Remove it from the local array so it disappears immediately
     currentTasks = currentTasks.map(t => 
       t.TaskID === tid ? { ...t, Accomplished: true } : t
     );
@@ -552,7 +620,8 @@ async function stopTimer() {
   
   if (currentTasks.length > 0) {
     const mid = currentTasks[0].MissionID;
-    currentTasks = await api(`/api/missions/${mid}/tasks`);
+    // UPDATED URL
+    currentTasks = await api(`/api/me/missions/${mid}/tasks`);
     renderTasks(currentTasks);
   }
 }
@@ -630,7 +699,7 @@ function goBack() {
 if (token) {
   api("/api/me")
     .then(user => {
-      who.textContent = user.EmployeeName;
+      who.textContent = user.EmployeeName + (user.Classification ? ` (${user.Classification})` : "");
       document.getElementById("loginContainer").style.display = "none";
       document.getElementById("app").style.display = "block";
       return checkActiveTimer().then(() => loadMe());

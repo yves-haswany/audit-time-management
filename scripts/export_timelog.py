@@ -1,4 +1,5 @@
 import os
+from io import BytesIO
 from datetime import datetime
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
@@ -27,16 +28,13 @@ def log_start_time(employee_name: str, id_honorary: int, customer_name: str, ser
     wb = load_workbook(LOG_FILE)
     ws = wb.active
     
-    # Generate new RecordID
     last_row = ws.max_row
     new_id = 1 if last_row == 1 else ws.cell(row=last_row, column=1).value + 1
     
-    # Format date and time
     dt = datetime.fromisoformat(login_time)
     date_str = dt.strftime("%Y-%m-%d")
     time_str = dt.strftime("%H:%M")
 
-    # Append new row
     ws.append([
         new_id, id_honorary, date_str, employee_name, customer_name, service,
         section_name, subsection_name, subsubsection_name,
@@ -59,13 +57,74 @@ def log_end_time(record_id: int, logout_time: str, hours_logged: float, job_desc
 
     for row in ws.iter_rows(min_row=2):
         if row[0].value == record_id:
-            # Columns are 1-indexed (A=1, B=2, etc.)
-            # 11 = Sign Out Time (Col K)
-            # 12 = Hours Logged (Col L)
-            # 13 = Job Description (Col M)
             ws.cell(row=row[0].row, column=11).value = time_str
             ws.cell(row=row[0].row, column=12).value = round(hours_logged, 2)
             ws.cell(row=row[0].row, column=13).value = job_desc
             break
             
     wb.save(LOG_FILE)
+
+def get_filtered_logs_as_list(employees: list[str] = None, all_logs: bool = False) -> list[dict]:
+    """Returns TimeLogs as a JSON-ready list, optionally filtered by employee names."""
+    if not LOG_FILE.exists():
+        return []
+
+    wb = load_workbook(LOG_FILE, data_only=True)
+    ws = wb.active
+    
+    headers = [cell.value for cell in ws[1]]
+    results = []
+
+    for row in ws.iter_rows(min_row=2):
+        row_data = {headers[i]: row[i].value for i in range(len(headers))}
+        
+        if all_logs or (employees and row_data.get("Employee") in employees):
+            # Format dates/times for JSON
+            if row_data.get("Date") and hasattr(row_data["Date"], "strftime"):
+                row_data["Date"] = row_data["Date"].strftime("%Y-%m-%d")
+            results.append(row_data)
+            
+    return results
+def export_user_logs_to_bytes(employees: list[str]) -> bytes:
+    """Returns an Excel file containing only the logs for the specific employees."""
+    if not LOG_FILE.exists():
+        raise FileNotFoundError("No time logs exist yet.")
+
+    wb = load_workbook(LOG_FILE)
+    ws = wb.active
+    
+    # Create a new workbook for the filtered data
+    new_wb = Workbook()
+    new_ws = new_wb.active
+    new_ws.append(HEADERS)
+    
+    # Copy rows where the Employee column (Column D / Index 3) matches the list
+    for row in ws.iter_rows(min_row=2):
+        if row[3].value in employees:
+            new_ws.append([cell.value for cell in row])
+            
+    buf = BytesIO()
+    new_wb.save(buf)
+    return buf.getvalue()
+
+def get_filtered_logs_as_list(employees: list[str] = None, all_logs: bool = False) -> list[dict]:
+    """Returns TimeLogs as a JSON-ready list, optionally filtered by employee names."""
+    if not LOG_FILE.exists():
+        return []
+
+    wb = load_workbook(LOG_FILE, data_only=True)
+    ws = wb.active
+    
+    headers = [cell.value for cell in ws[1]]
+    results = []
+
+    for row in ws.iter_rows(min_row=2):
+        row_data = {headers[i]: row[i].value for i in range(len(headers))}
+        
+        if all_logs or (employees and row_data.get("Employee") in employees):
+            # Format dates/times for JSON
+            if row_data.get("Date") and hasattr(row_data["Date"], "strftime"):
+                row_data["Date"] = row_data["Date"].strftime("%Y-%m-%d")
+            results.append(row_data)
+            
+    return results
