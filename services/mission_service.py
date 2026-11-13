@@ -35,23 +35,50 @@ def summary(employee_id: int) -> dict:
 
 def list_missions(employee_id: int) -> list[dict]:
     c = connect()
-    # UPDATE THIS QUERY TO SELECT FiscalYear
-    rows = c.execute(
-        """SELECT b.*, m.Service, m.FiscalYear 
-           FROM MemberMissionBudget b
-           JOIN Mission m ON m.MissionID = b.MissionID
-           WHERE b.EmployeeID = ? ORDER BY b.WindowStart""",
-        (employee_id,),
-    ).fetchall()
+    
+    # 1. Get the employee's name and TenantID
+    emp = c.execute("SELECT EmployeeName, TenantID FROM Employee WHERE EmployeeID = ?", (employee_id,)).fetchone()
+    if not emp:
+        c.close()
+        return []
+        
+    emp_name = emp["EmployeeName"]
+    tenant_id = emp["TenantID"]
+
+    # 2. Query the missions directly, matching by TenantID and TeamMemberName
+    rows = c.execute("""
+        SELECT 
+            m.MissionID, 
+            m.CustomerName, 
+            m.IDHonorary, 
+            m.FiscalYear, 
+            m.WindowStart, 
+            m.WindowEnd,
+            s.ServiceName AS Service,
+            COUNT(t.TaskID) AS TasksTotal,
+            SUM(t.AllocatedHours) AS AllocatedHours,
+            SUM(t.Accomplished) AS TasksDone,
+            0.0 AS ConsumedHours,
+            0.0 AS PctConsumed
+        FROM Mission m
+        JOIN MissionTask t ON t.MissionID = m.MissionID
+        JOIN Service s ON s.ServiceID = m.ServiceID
+        WHERE m.TenantID = ? 
+          AND (
+              t.TeamMemberName = ? 
+              OR t.TeamMemberName IN (SELECT EmployeeName FROM Employee WHERE TeamLeader = ?)
+          )
+        GROUP BY m.MissionID
+        ORDER BY m.WindowStart
+    """, (tenant_id, emp_name, emp_name)).fetchall()
     
     out = []
     for r in rows:
         d = dict(r)
         d["WindowStatus"] = _status(d["WindowStart"], d["WindowEnd"])
-        d["DaysRemaining"] = (
-            date.fromisoformat(d["WindowEnd"]) - date.today()
-        ).days
+        d["DaysRemaining"] = (date.fromisoformat(d["WindowEnd"]) - date.today()).days
         out.append(d)
+        
     c.close()
     return out
 

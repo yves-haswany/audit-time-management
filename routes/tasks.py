@@ -10,7 +10,6 @@ import os
 from scripts.export_timelog import log_start_time, log_end_time
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
-mission_router = APIRouter(prefix="/api/missions", tags=["missions"])
 
 class StopTaskIn(BaseModel):
     JobDesc: str
@@ -62,10 +61,11 @@ def start_task(task_id: int, user=Depends(current_user)):
     
     c = connect()
     info = c.execute("""
-        SELECT m.IDHonorary, m.CustomerName, m.Service, 
-               t.SectionName, t.SubSectionName, t.SubSubSectionName 
+        SELECT m.IDHonorary, m.CustomerName, s.ServiceName AS Service, 
+               t.TaskName, t.TaskDescription 
         FROM MissionTask t 
         JOIN Mission m ON m.MissionID = t.MissionID 
+        JOIN Service s ON s.ServiceID = m.ServiceID
         WHERE t.TaskID = ?
     """, (task_id,)).fetchone()
     
@@ -76,9 +76,21 @@ def start_task(task_id: int, user=Depends(current_user)):
     c.close()
 
     if info and session:
+        # Split the description into Section / SubSection
+        desc = info["TaskDescription"] or ""
+        parts = desc.split(" / ")
+        section_name = parts[0] if len(parts) > 0 else "-"
+        subsection_name = parts[1] if len(parts) > 1 else "-"
+        subsubsection_name = info["TaskName"]  # Use the TaskName as SubSubSection
+
         record_id = log_start_time(
-            user["EmployeeName"], info["IDHonorary"], info["CustomerName"], info["Service"],
-            info["SectionName"], info["SubSectionName"], info["SubSubSectionName"],
+            user["EmployeeName"], 
+            info["IDHonorary"], 
+            info["CustomerName"], 
+            info["Service"],
+            section_name,
+            subsection_name,
+            subsubsection_name,
             session["LoginTime"]
         )
         c = connect()
@@ -121,32 +133,3 @@ def stop_task(task_id: int, body: StopTaskIn, user=Depends(current_user)):
 def update_task(task_id: int, body: TaskUpdateIn, user=Depends(current_user)):
     changes = body.model_dump(exclude_none=True)
     return task_service.update(user["EmployeeID"], task_id, changes)
-
-# CHANGED: Using mission_router here to match the frontend URL /api/missions/{mid}/tasks
-@mission_router.get("/{mid}/tasks")
-def mission_tasks(mid: int, user=Depends(current_user)):
-    c = connect()
-    
-    classification = str(user.get("Classification", "")).strip().lower()
-    
-    if classification in ["team leader", "administrator"]:
-        rows = c.execute("""
-            SELECT t.*, t.TeamMemberName as EmployeeName, 
-                   ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
-            FROM MissionTask t
-            LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-            WHERE t.MissionID = ?
-            ORDER BY t.TaskID
-        """, (mid,)).fetchall()
-    else:
-        rows = c.execute("""
-            SELECT t.*, t.TeamMemberName as EmployeeName, 
-                   ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
-            FROM MissionTask t
-            LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-            WHERE t.MissionID = ? AND t.EmployeeID = ?
-            ORDER BY t.TaskID
-        """, (mid, user["EmployeeID"])).fetchall()
-        
-    c.close()
-    return [dict(r) for r in rows]

@@ -5,8 +5,6 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 
 LOG_FILE = Path("exports") / "TimeLogs.xlsx"
-
-# Ensure folder exists
 LOG_FILE.parent.mkdir(exist_ok=True)
 
 HEADERS = [
@@ -35,11 +33,21 @@ def log_start_time(employee_name: str, id_honorary: int, customer_name: str, ser
     date_str = dt.strftime("%Y-%m-%d")
     time_str = dt.strftime("%H:%M")
 
-    ws.append([
-        new_id, id_honorary, date_str, employee_name, customer_name, service,
-        section_name, subsection_name, subsubsection_name,
-        time_str, "", "", "" 
-    ])
+    # Write to exact coordinates to prevent column shifting
+    new_row = last_row + 1
+    ws.cell(row=new_row, column=1).value = new_id
+    ws.cell(row=new_row, column=2).value = id_honorary
+    ws.cell(row=new_row, column=3).value = date_str
+    ws.cell(row=new_row, column=4).value = employee_name
+    ws.cell(row=new_row, column=5).value = customer_name
+    ws.cell(row=new_row, column=6).value = service
+    ws.cell(row=new_row, column=7).value = section_name
+    ws.cell(row=new_row, column=8).value = subsection_name
+    ws.cell(row=new_row, column=9).value = subsubsection_name
+    ws.cell(row=new_row, column=10).value = time_str
+    ws.cell(row=new_row, column=11).value = ""  # Sign Out Time
+    ws.cell(row=new_row, column=12).value = ""  # Hours Logged
+    ws.cell(row=new_row, column=13).value = ""  # Job Description
     
     wb.save(LOG_FILE)
     return new_id
@@ -47,6 +55,7 @@ def log_start_time(employee_name: str, id_honorary: int, customer_name: str, ser
 def log_end_time(record_id: int, logout_time: str, hours_logged: float, job_desc: str):
     """Updates the row with the matching RecordID."""
     if not LOG_FILE.exists():
+        print("[ERROR] TimeLogs.xlsx does not exist!")
         return
 
     wb = load_workbook(LOG_FILE)
@@ -55,17 +64,26 @@ def log_end_time(record_id: int, logout_time: str, hours_logged: float, job_desc
     dt = datetime.fromisoformat(logout_time)
     time_str = dt.strftime("%H:%M")
 
-    for row in ws.iter_rows(min_row=2):
+    found = False
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2), start=2):
         if row[0].value == record_id:
-            ws.cell(row=row[0].row, column=11).value = time_str
-            ws.cell(row=row[0].row, column=12).value = round(hours_logged, 2)
-            ws.cell(row=row[0].row, column=13).value = job_desc
+            found = True
+            # 13-Column Schema:
+            # Col 11 = Sign Out Time
+            # Col 12 = Hours Logged
+            # Col 13 = Job Description
+            ws.cell(row=row_idx, column=11).value = time_str
+            ws.cell(row=row_idx, column=12).value = round(hours_logged, 2)
+            ws.cell(row=row_idx, column=13).value = job_desc
             break
             
-    wb.save(LOG_FILE)
+    if found:
+        wb.save(LOG_FILE)
+        print(f"[DEBUG] Updated RecordID {record_id} successfully.")
+    else:
+        print(f"[ERROR] RecordID {record_id} not found in Excel file!")
 
 def get_filtered_logs_as_list(employees: list[str] = None, all_logs: bool = False) -> list[dict]:
-    """Returns TimeLogs as a JSON-ready list, optionally filtered by employee names."""
     if not LOG_FILE.exists():
         return []
 
@@ -79,26 +97,23 @@ def get_filtered_logs_as_list(employees: list[str] = None, all_logs: bool = Fals
         row_data = {headers[i]: row[i].value for i in range(len(headers))}
         
         if all_logs or (employees and row_data.get("Employee") in employees):
-            # Format dates/times for JSON
             if row_data.get("Date") and hasattr(row_data["Date"], "strftime"):
                 row_data["Date"] = row_data["Date"].strftime("%Y-%m-%d")
             results.append(row_data)
             
     return results
+
 def export_user_logs_to_bytes(employees: list[str]) -> bytes:
-    """Returns an Excel file containing only the logs for the specific employees."""
     if not LOG_FILE.exists():
         raise FileNotFoundError("No time logs exist yet.")
 
     wb = load_workbook(LOG_FILE)
     ws = wb.active
     
-    # Create a new workbook for the filtered data
     new_wb = Workbook()
     new_ws = new_wb.active
     new_ws.append(HEADERS)
     
-    # Copy rows where the Employee column (Column D / Index 3) matches the list
     for row in ws.iter_rows(min_row=2):
         if row[3].value in employees:
             new_ws.append([cell.value for cell in row])
@@ -106,25 +121,3 @@ def export_user_logs_to_bytes(employees: list[str]) -> bytes:
     buf = BytesIO()
     new_wb.save(buf)
     return buf.getvalue()
-
-def get_filtered_logs_as_list(employees: list[str] = None, all_logs: bool = False) -> list[dict]:
-    """Returns TimeLogs as a JSON-ready list, optionally filtered by employee names."""
-    if not LOG_FILE.exists():
-        return []
-
-    wb = load_workbook(LOG_FILE, data_only=True)
-    ws = wb.active
-    
-    headers = [cell.value for cell in ws[1]]
-    results = []
-
-    for row in ws.iter_rows(min_row=2):
-        row_data = {headers[i]: row[i].value for i in range(len(headers))}
-        
-        if all_logs or (employees and row_data.get("Employee") in employees):
-            # Format dates/times for JSON
-            if row_data.get("Date") and hasattr(row_data["Date"], "strftime"):
-                row_data["Date"] = row_data["Date"].strftime("%Y-%m-%d")
-            results.append(row_data)
-            
-    return results

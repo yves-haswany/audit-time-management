@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Super Admin Portal</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { max-width: 800px; margin: 4em auto; font-family: system-ui; }
+    .card { border: 1px solid #ddd; padding: 2em; border-radius: 8px; background: #fafafa; margin-bottom: 2em; }
+    .form-group { margin-bottom: 1em; }
+    label { display: block; font-weight: bold; margin-bottom: 0.3em; }
+    input { width: 100%; padding: 0.6em; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 0.8em 1.5em; background: #2b6cb0; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; }
+    button:hover { background: #255a92; }
+    .btn-outline { background: transparent; color: #2b6cb0; border: 1px solid #2b6cb0; }
+    .btn-outline:hover { background: #e2e8f0; }
+    .btn-edit { background: #e67e22; padding: 0.4em 0.8em; font-size: 0.85em; }
+    .btn-edit:hover { background: #d35400; }
+    .btn-view { background: #2b6cb0; padding: 0.4em 0.8em; font-size: 0.85em; }
+    .btn-view:hover { background: #255a92; }
+    #message { margin-top: 1em; padding: 1em; border-radius: 4px; display: none; }
+    .success { background: #e8f5e9; color: #2e7d32; }
+    .error { background: #ffebee; color: #c62828; }
+    
+    /* Table Styles */
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; background: white; }
+    th, td { padding: 0.8em; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #f1f5f9; font-weight: bold; }
+    
+    /* Hide sections by default */
+    #createFormSection, #editFormSection, #employeeListView { display: none; }
+    #dashboardView { display: none; }
+  </style>
+</head>
+<body>
+  
+  <!-- LOGIN VIEW -->
+  <div id="loginView" class="card" style="max-width: 400px; margin: 0 auto;">
+    <h2>Super Admin Login</h2>
+    <form id="loginForm">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="sa_username" required>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="sa_password" required>
+      </div>
+      <button type="submit" style="width: 100%;">Login</button>
+    </form>
+    <div id="loginMessage"></div>
+  </div>
+
+  <!-- MAIN DASHBOARD VIEW -->
+  <div id="dashboardView">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
+      <h1 style="margin: 0;">Super Admin Dashboard</h1>
+      <button onclick="doLogout()" class="btn-outline">Logout</button>
+    </div>
+
+    <!-- List of Tenants -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
+        <h2 style="margin: 0;">Existing Tenants</h2>
+        <button onclick="showCreateForm()">+ Create New Tenant</button>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Company Name</th>
+            <th>Industry</th>
+            <th>Employees</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tenantTableBody">
+          <tr><td colspan="5" style="text-align: center; color: #666;">Loading tenants...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Create Tenant Form -->
+    <div id="createFormSection" class="card" style="border-color: #90caf9; background: #e3f2fd;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
+        <h2 style="margin: 0;">Create a New Tenant</h2>
+        <button onclick="hideForms()" class="btn-outline">Cancel</button>
+      </div>
+      
+      <form id="tenantForm">
+        <div class="form-group">
+          <label>Company Name</label>
+          <input type="text" id="company_name" required>
+        </div>
+        <div class="form-group">
+          <label>Industry</label>
+          <input type="text" id="industry" required>
+        </div>
+        <hr style="margin: 2em 0; border: 0; border-top: 1px solid #ccc;">
+        <div class="form-group">
+          <label>Admin Username</label>
+          <input type="text" id="admin_username" required>
+        </div>
+        <div class="form-group">
+          <label>Admin Password</label>
+          <input type="password" id="admin_password" required>
+        </div>
+        <button type="submit">Create Tenant</button>
+      </form>
+      <div id="message"></div>
+    </div>
+
+    <!-- Edit Tenant Form -->
+    <div id="editFormSection" class="card" style="border-color: #f39c12; background: #fef9e7;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
+        <h2 style="margin: 0;">Edit Tenant: <span id="editCompanyNameDisplay"></span></h2>
+        <button onclick="hideForms()" class="btn-outline">Cancel</button>
+      </div>
+      
+      <form id="editTenantForm">
+        <input type="hidden" id="edit_tenant_id">
+        <div class="form-group">
+          <label>Company Name</label>
+          <input type="text" id="edit_company_name" required>
+        </div>
+        <div class="form-group">
+          <label>Industry</label>
+          <input type="text" id="edit_industry" required>
+        </div>
+        <hr style="margin: 2em 0; border: 0; border-top: 1px solid #ccc;">
+        <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">Leave the fields below blank to keep the current Admin credentials.</p>
+        <div class="form-group">
+          <label>New Admin Username</label>
+          <input type="text" id="edit_admin_username" placeholder="Leave blank to keep current">
+        </div>
+        <div class="form-group">
+          <label>New Admin Password</label>
+          <input type="password" id="edit_admin_password" placeholder="Leave blank to keep current">
+        </div>
+        <button type="submit" style="background: #f39c12;">Save Changes</button>
+      </form>
+      <div id="editMessage"></div>
+    </div>
+
+    <!-- Employee List View -->
+    <div id="employeeListView" class="card" style="border-color: #90caf9;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
+        <h2 style="margin: 0;">Employees at <span id="employeeTenantName"></span></h2>
+        <button onclick="document.getElementById('employeeListView').style.display='none'" class="btn-outline">Close</button>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Team Leader</th>
+          </tr>
+        </thead>
+        <tbody id="employeeTableBody">
+          <tr><td colspan="4" style="text-align: center; color: #666;">Loading employees...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let saToken = localStorage.getItem("saToken") || "";
+
+    if (saToken) {
+      document.getElementById("loginView").style.display = "none";
+      document.getElementById("dashboardView").style.display = "block";
+      loadTenants();
+    }
+
+    function doLogout() {
+      localStorage.removeItem("saToken");
+      location.reload();
+    }
+
+    function hideForms() {
+      document.getElementById("createFormSection").style.display = "none";
+      document.getElementById("editFormSection").style.display = "none";
+      document.getElementById("employeeListView").style.display = "none";
+    }
+
+    function showCreateForm() {
+      hideForms();
+      document.getElementById("createFormSection").style.display = "block";
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+
+    function showEditForm(id, name, industry) {
+      hideForms();
+      document.getElementById("edit_tenant_id").value = id;
+      document.getElementById("edit_company_name").value = name;
+      document.getElementById("edit_industry").value = industry;
+      document.getElementById("editCompanyNameDisplay").textContent = name;
+      
+      document.getElementById("edit_admin_username").value = "";
+      document.getElementById("edit_admin_password").value = "";
+      
+      document.getElementById("editFormSection").style.display = "block";
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }
+
+    async function viewEmployees(tenantId, tenantName) {
+      hideForms();
+      document.getElementById("employeeTenantName").textContent = tenantName;
+      document.getElementById("employeeListView").style.display = "block";
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      
+      const tbody = document.getElementById("employeeTableBody");
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #666;">Loading employees...</td></tr>`;
+      
+      try {
+        const res = await fetch(`/api/super-admin/tenants/${tenantId}/employees`, {
+          headers: { "Authorization": "Bearer " + saToken }
+        });
+        
+        if (!res.ok) throw new Error("Failed to load employees");
+        
+        const employees = await res.json();
+        
+        if (employees.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #666;">No employees found for this tenant.</td></tr>`;
+          return;
+        }
+        
+        tbody.innerHTML = employees.map(e => `
+          <tr>
+            <td>${e.EmployeeName}</td>
+            <td><code>${e.Username}</code></td>
+            <td>${e.Classification || '-'}</td>
+            <td>${e.TeamLeader || '-'}</td>
+          </tr>
+        `).join("");
+        
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: red;">Error loading employees: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function loadTenants() {
+      const tbody = document.getElementById("tenantTableBody");
+      try {
+        const res = await fetch("/api/super-admin/tenants", {
+          headers: { "Authorization": "Bearer " + saToken }
+        });
+        const tenants = await res.json();
+        
+        if (tenants.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #666;">No tenants created yet.</td></tr>`;
+          return;
+        }
+        
+        tbody.innerHTML = tenants.map(t => `
+          <tr>
+            <td>${t.TenantID}</td>
+            <td><b>${t.CompanyName}</b></td>
+            <td>${t.Industry}</td>
+            <td>${t.EmployeeCount}</td>
+            <td>
+              <button class="btn-edit" onclick="showEditForm(${t.TenantID}, '${t.CompanyName.replace(/'/g, "\\'")}', '${t.Industry.replace(/'/g, "\\'")}')">Edit</button>
+              <button class="btn-view" onclick="viewEmployees(${t.TenantID}, '${t.CompanyName.replace(/'/g, "\\'")}')">View Employees</button>
+            </td>
+          </tr>
+        `).join("");
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: red;">Error loading tenants.</td></tr>`;
+      }
+    }
+
+    // Handle Login
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("loginMessage");
+      msg.style.display = "none";
+      
+      try {
+        const res = await fetch("/api/super-admin/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: document.getElementById("sa_username").value,
+            password: document.getElementById("sa_password").value
+          })
+        });
+        
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Login failed");
+        
+        saToken = data.token;
+        localStorage.setItem("saToken", saToken);
+        
+        document.getElementById("loginView").style.display = "none";
+        document.getElementById("dashboardView").style.display = "block";
+        loadTenants();
+      } catch (err) {
+        msg.className = "error";
+        msg.textContent = "❌ " + err.message;
+        msg.style.display = "block";
+      }
+    });
+
+    // Handle Create Tenant
+    document.getElementById("tenantForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("message");
+      msg.style.display = "none";
+      
+      const payload = {
+        company_name: document.getElementById("company_name").value,
+        industry: document.getElementById("industry").value,
+        admin_username: document.getElementById("admin_username").value,
+        admin_password: document.getElementById("admin_password").value
+      };
+
+      try {
+        const res = await fetch("/api/super-admin/tenants", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + saToken
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Failed to create tenant");
+        }
+        
+        msg.className = "success";
+        msg.textContent = "✅ Tenant created successfully!";
+        msg.style.display = "block";
+        document.getElementById("tenantForm").reset();
+        
+        loadTenants();
+        setTimeout(hideForms, 2000);
+        
+      } catch (err) {
+        msg.className = "error";
+        msg.textContent = "❌ " + err.message;
+        msg.style.display = "block";
+      }
+    });
+
+    // Handle Edit Tenant
+    document.getElementById("editTenantForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("editMessage");
+      msg.style.display = "none";
+      
+      const id = document.getElementById("edit_tenant_id").value;
+      
+      const payload = {
+        company_name: document.getElementById("edit_company_name").value,
+        industry: document.getElementById("edit_industry").value,
+        admin_username: document.getElementById("edit_admin_username").value || null,
+        admin_password: document.getElementById("edit_admin_password").value || null
+      };
+
+      try {
+        const res = await fetch(`/api/super-admin/tenants/${id}`, {
+          method: "PUT",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + saToken
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Failed to update tenant");
+        }
+        
+        msg.className = "success";
+        msg.textContent = "✅ Tenant updated successfully!";
+        msg.style.display = "block";
+        
+        loadTenants();
+        setTimeout(hideForms, 2000);
+        
+      } catch (err) {
+        msg.className = "error";
+        msg.textContent = "❌ " + err.message;
+        msg.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

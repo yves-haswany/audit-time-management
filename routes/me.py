@@ -45,32 +45,36 @@ def my_missions(user=Depends(current_user)):
         
     return mission_service.list_missions(user["EmployeeID"])
 
-# ADDED THIS ENDPOINT:
+# ONLY returns the current user's tasks for the "My tasks" view
 @router.get("/missions/{mid}/tasks")
-def mission_tasks(mid: int, user=Depends(current_user)):
+def my_mission_tasks(mid: int, user=Depends(current_user)):
     c = connect()
+    rows = c.execute("""
+        SELECT t.*, t.TeamMemberName as EmployeeName, 
+               ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
+        FROM MissionTask t
+        LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
+        WHERE t.MissionID = ? AND t.EmployeeID = ?
+        ORDER BY t.TaskID
+    """, (mid, user["EmployeeID"])).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+# Returns ALL tasks for the mission (for the "View Team Tasks" read-only table)
+@router.get("/missions/{mid}/team-tasks")
+def team_mission_tasks(mid: int, user=Depends(current_user)):
     classification = str(user.get("Classification", "")).strip().lower()
-    
-    if classification in ["team leader", "administrator"]:
-        # Team Leaders and Admins get ALL tasks in the mission
-        rows = c.execute("""
-            SELECT t.*, t.TeamMemberName as EmployeeName, 
-                   ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
-            FROM MissionTask t
-            LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-            WHERE t.MissionID = ?
-            ORDER BY t.TaskID
-        """, (mid,)).fetchall()
-    else:
-        # Regular employees get only their own tasks
-        rows = c.execute("""
-            SELECT t.*, t.TeamMemberName as EmployeeName, 
-                   ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
-            FROM MissionTask t
-            LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-            WHERE t.MissionID = ? AND t.EmployeeID = ?
-            ORDER BY t.TaskID
-        """, (mid, user["EmployeeID"])).fetchall()
+    if classification not in ["team leader", "administrator"]:
+        return []
         
+    c = connect()
+    rows = c.execute("""
+        SELECT t.*, t.TeamMemberName as EmployeeName, 
+               ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
+        FROM MissionTask t
+        LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
+        WHERE t.MissionID = ?
+        ORDER BY t.TaskID
+    """, (mid,)).fetchall()
     c.close()
     return [dict(r) for r in rows]
