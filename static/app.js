@@ -92,8 +92,10 @@ function badge(s) {
 
 function populateDropdown(id, defaultText, options) {
   const select = document.getElementById(id);
-  select.innerHTML = `<option value="all">${defaultText}</option>` +
-    options.map(opt => `<option value="${String(opt).replace(/"/g, '&quot;')}">${opt}</option>`).join("");
+  if (select) {
+    select.innerHTML = `<option value="all">${defaultText}</option>` +
+      options.map(opt => `<option value="${String(opt).replace(/"/g, '&quot;')}">${opt}</option>`).join("");
+  }
 }
 
 // ============================================================
@@ -139,11 +141,11 @@ async function downloadTimeLogs() {
 // ============================================================
 
 async function showTimeLogs() {
-  document.getElementById("listView").style.display = "none";
-  document.getElementById("missionView").style.display = "none";
-  document.getElementById("tableView").style.display = "none";
-  document.getElementById("teamTableView").style.display = "none";
-  document.getElementById("adminView").style.display = "none";
+  const hideIds = ["listView", "missionView", "tableView", "teamTableView", "adminView"];
+  hideIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
 
   document.getElementById("timeLogsView").style.display = "block";
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -235,11 +237,14 @@ async function loadMe() {
 
   if (isAdmin) {
     // Admins skip missions entirely — they have no work assigned.
-    document.getElementById("noWork").style.display = "none";
-    document.getElementById("listView").style.display = "none";
-    document.getElementById("myH").style.display = "none";
-    document.getElementById("filterContainer").style.display = "none";
-    document.getElementById("missions").innerHTML = "";
+    const hideIds = ["noWork", "listView", "myH", "filterContainer"];
+    hideIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = "none";
+    });
+    
+    const missionsEl = document.getElementById("missions");
+    if (missionsEl) missionsEl.innerHTML = "";
 
     // Auto-open the admin panel
     showAdminPanel();
@@ -520,23 +525,30 @@ async function loadAllMissions() {
   try {
     const ms = await api("/api/admin/missions");
     if (!ms.length) return;
-    document.getElementById("allMissions").innerHTML = ms.map(m => `
-      <div class="card">
-        <div class="row">
-          <div>
-            <b>${m.CustomerName}</b> <span class="muted">(ID ${m.IDHonorary})</span><br>
-            <span class="muted" style="font-size: 0.85em; text-transform: uppercase; color: #FF0000;">${m.ServiceName || m.Service}</span>
-            ${m.FiscalYear ? `<span class="muted" style="font-size: 0.85em; margin-left: 10px; font-weight: bold;">FY: ${m.FiscalYear}</span>` : ""}
+
+    // FIX: Safely check if the element exists before setting innerHTML
+    const el = document.getElementById("allMissions");
+    if (el) {
+      el.innerHTML = ms.map(m => `
+        <div class="card">
+          <div class="row">
+            <div>
+              <b>${m.CustomerName}</b> <span class="muted">(ID ${m.IDHonorary})</span><br>
+              <span class="muted" style="font-size: 0.85em; text-transform: uppercase; color: #FF0000;">${m.ServiceName || m.Service}</span>
+              ${m.FiscalYear ? `<span class="muted" style="font-size: 0.85em; margin-left: 10px; font-weight: bold;">FY: ${m.FiscalYear}</span>` : ""}
+            </div>
+            ${badge(m.WindowStatus)}
+            <span class="muted">${m.WindowStart} → ${m.WindowEnd}</span>
+            <span class="muted">· ${m.TasksTotal} tasks · ${m.AllocatedHours} h</span>
           </div>
-          ${badge(m.WindowStatus)}
-          <span class="muted">${m.WindowStart} → ${m.WindowEnd}</span>
-          <span class="muted">· ${m.TasksTotal} tasks · ${m.AllocatedHours} h</span>
-        </div>
-        <button onclick="exportMission(${m.MissionID}, '${m.CustomerName.replace(/'/g, "\\'")}')">
-          Export to Excel
-        </button>
-      </div>`).join("");
-    document.getElementById("allMissionsCard").style.display = "block";
+          <button onclick="exportMission(${m.MissionID}, '${m.CustomerName.replace(/'/g, "\\'")}')">
+            Export to Excel
+          </button>
+        </div>`).join("");
+    }
+
+    const card = document.getElementById("allMissionsCard");
+    if (card) card.style.display = "block";
   } catch (e) {
     console.error("loadAllMissions:", e);
   }
@@ -575,27 +587,42 @@ async function pick(mid) {
     } else return;
   }
 
-  document.getElementById("myH").style.display = "none";
-  document.getElementById("filterContainer").style.display = "none";
-  document.getElementById("listView").style.display = "none";
-  document.getElementById("allMissionsCard").style.display = "none";
-  document.getElementById("adminView").style.display = "none";
-  document.getElementById("missionView").style.display = "block";
+  // FIX: Safely hide views using a loop
+  const hideIds = ["myH", "filterContainer", "listView", "allMissionsCard", "adminView", "noWork"];
+  hideIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
 
-  document.getElementById("btnViewLogs").style.display = "none";
-  document.getElementById("btnDownloadLogs").style.display = "none";
-  document.getElementById("btnAdminPanel").style.display = "none";
+  const missionView = document.getElementById("missionView");
+  if (missionView) missionView.style.display = "block";
 
-  document.getElementById("taskSearch").value = "";
-  document.getElementById("taskSearchList").style.display = "none";
-  document.getElementById("taskDateFrom").value = "";
-  document.getElementById("taskDateTo").value = "";
+  const btnIds = ["btnViewLogs", "btnDownloadLogs", "btnAdminPanel"];
+  btnIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+
+  const taskSearch = document.getElementById("taskSearch");
+  if (taskSearch) taskSearch.value = "";
+  
+  const taskList = document.getElementById("taskSearchList");
+  if (taskList) taskList.style.display = "none";
+  
+  const fromDate = document.getElementById("taskDateFrom");
+  if (fromDate) fromDate.value = "";
+  
+  const toDate = document.getElementById("taskDateTo");
+  if (toDate) toDate.value = "";
 
   const userRole = who.textContent.toLowerCase();
-  if (userRole.includes("team leader") || userRole.includes("administrator")) {
-    document.getElementById("btnViewTeamTasks").style.display = "inline-block";
-  } else {
-    document.getElementById("btnViewTeamTasks").style.display = "none";
+  const btnTeamTasks = document.getElementById("btnViewTeamTasks");
+  if (btnTeamTasks) {
+    if (userRole.includes("team leader") || userRole.includes("administrator")) {
+      btnTeamTasks.style.display = "inline-block";
+    } else {
+      btnTeamTasks.style.display = "none";
+    }
   }
 
   currentTasks = await api(`/api/me/missions/${mid}/tasks`);

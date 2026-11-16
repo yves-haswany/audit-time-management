@@ -137,6 +137,12 @@
       </div>
 
       <div id="missions" style="margin-top: 1em;"></div>
+
+      <!-- ADDED: Missing allMissionsCard and allMissions elements -->
+      <div id="allMissionsCard" style="display:none; margin-top: 2em; border-top: 2px dashed #ccc; padding-top: 1em;">
+        <h2>All Missions (Admin)</h2>
+        <div id="allMissions"></div>
+      </div>
     </div>
 
     <!-- READ-ONLY MISSION TABLE VIEW -->
@@ -337,6 +343,7 @@
 
   </div>
 
-  <script src="/static/app.js"></script>
+  <!-- UPDATED: Cache buster to force the browser to load the new JS -->
+  <script src="/static/app.js?v=105"></script>
 </body>
 </html>
