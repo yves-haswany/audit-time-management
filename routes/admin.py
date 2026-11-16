@@ -23,9 +23,10 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # ============================================================
 
 def _require_admin(user=Depends(current_user)):
-    """Reject anyone whose Classification is not 'Administrator'."""
-    if str(user.get("Classification", "")).strip().lower() != "administrator":
-        raise HTTPException(403, "Administrator only")
+    """Reject anyone whose Classification is not 'Administrator' or 'Managing Partner'."""
+    role = str(user.get("Classification", "")).strip().lower()
+    if role not in ["administrator", "managing partner"]:
+        raise HTTPException(403, "Administrator or Managing Partner only")
     return user
 
 
@@ -109,7 +110,7 @@ def view_time_logs(user=Depends(current_user)):
     """Returns a filtered list of time logs based on the user's role."""
     classification = str(user.get("Classification", "")).strip().lower()
 
-    if classification == "administrator":
+    if classification in ["administrator", "managing partner"]:
         logs = get_filtered_logs_as_list(all_logs=True)
     elif classification == "team leader":
         c = connect()
@@ -160,7 +161,7 @@ def download_timelogs(user=Depends(current_user)):
     """Downloads the Excel file based on the user's role."""
     classification = str(user.get("Classification", "")).strip().lower()
 
-    if classification == "administrator":
+    if classification in ["administrator", "managing partner"]:
         file_path = os.path.join("exports", "TimeLogs.xlsx")
         if not os.path.exists(file_path):
             raise HTTPException(404, "No logs exist yet.")
@@ -194,7 +195,7 @@ def download_timelogs(user=Depends(current_user)):
     else:
         raise HTTPException(
             403,
-            "Access denied. Only Team Leaders and Administrators can download time logs.",
+            "Access denied. Only Team Leaders, Administrators, and Managing Partners can download time logs.",
         )
 
 

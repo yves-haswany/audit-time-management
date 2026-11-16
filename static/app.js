@@ -34,6 +34,12 @@ async function api(url, opt = {}) {
   return r.json();
 }
 
+// --- HELPER: Check if user is Admin OR Managing Partner ---
+function isGlobalViewer() {
+  const role = who.textContent.toLowerCase();
+  return role.includes("administrator") || role.includes("managing partner");
+}
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -51,10 +57,10 @@ async function doLogin(event) {
     const role = (r.employee.Classification || "").toLowerCase();
     who.textContent = r.employee.EmployeeName + (r.employee.Classification ? ` (${r.employee.Classification})` : "");
 
-    const isAdmin = role === "administrator";
-    document.getElementById("btnAdminPanel").style.display = isAdmin ? "inline-block" : "none";
+    const hasAdminRights = role === "administrator" || role === "managing partner";
+    document.getElementById("btnAdminPanel").style.display = hasAdminRights ? "inline-block" : "none";
     document.getElementById("btnDownloadLogs").style.display =
-      (role === "team leader" || isAdmin) ? "inline-block" : "none";
+      (role === "team leader" || hasAdminRights) ? "inline-block" : "none";
 
     document.getElementById("loginContainer").style.display = "none";
     document.getElementById("app").style.display = "block";
@@ -232,26 +238,11 @@ function hideTimeLogs() {
 // ============================================================
 
 async function loadMe() {
-  const role = who.textContent.toLowerCase();
-  const isAdmin = role.includes("administrator");
+  const isGlobal = isGlobalViewer();
 
-  if (isAdmin) {
-    // Admins skip missions entirely — they have no work assigned.
-    const hideIds = ["noWork", "listView", "myH", "filterContainer"];
-    hideIds.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = "none";
-    });
-    
-    const missionsEl = document.getElementById("missions");
-    if (missionsEl) missionsEl.innerHTML = "";
-
-    // Auto-open the admin panel
-    showAdminPanel();
-    return;
-  }
-
+  // 1. Fetch personal data (if any)
   const sum = await api("/api/me/summary");
+  
   if (!sum.HasWork) {
     document.getElementById("noWork").style.display = "block";
     document.getElementById("noWorkWho").textContent = sum.EmployeeName + " (" + sum.Username + ")";
@@ -260,14 +251,29 @@ async function loadMe() {
     document.getElementById("missions").innerHTML = "";
   } else {
     myMissionsData = await api("/api/me/missions");
-
     allClients = [...new Set(myMissionsData.map(m => m.CustomerName))].sort();
     setupClientDropdown();
 
     document.getElementById("filterContainer").style.display = "flex";
     filterMissions();
   }
-  await loadAllMissions();
+
+  // 2. Load the "All Company Missions" list (Now works for Admins & Partners)
+  if (isGlobal) {
+    await loadAllMissions(); 
+    
+    // Hide the personal missions view for Admins/Partners
+    document.getElementById("myH").style.display = "none";
+    document.getElementById("filterContainer").style.display = "none";
+    document.getElementById("noWork").style.display = "none";
+  } else {
+    // Team Leaders & Members: Hide the global list
+    const card = document.getElementById("allMissionsCard");
+    if (card) card.style.display = "none";
+  }
+
+  // 3. Ensure the main view is visible
+  document.getElementById("listView").style.display = "block";
 }
 
 function toggleMissionView() {
@@ -522,11 +528,14 @@ function filterTasks() {
 // ============================================================
 
 async function loadAllMissions() {
+  // Team Leaders and Members should NOT load the global list.
+  // Only Admins and Managing Partners should load it.
+  if (!isGlobalViewer()) return;
+
   try {
     const ms = await api("/api/admin/missions");
     if (!ms.length) return;
 
-    // FIX: Safely check if the element exists before setting innerHTML
     const el = document.getElementById("allMissions");
     if (el) {
       el.innerHTML = ms.map(m => `
@@ -587,7 +596,6 @@ async function pick(mid) {
     } else return;
   }
 
-  // FIX: Safely hide views using a loop
   const hideIds = ["myH", "filterContainer", "listView", "allMissionsCard", "adminView", "noWork"];
   hideIds.forEach(id => {
     const el = document.getElementById(id);
@@ -618,7 +626,7 @@ async function pick(mid) {
   const userRole = who.textContent.toLowerCase();
   const btnTeamTasks = document.getElementById("btnViewTeamTasks");
   if (btnTeamTasks) {
-    if (userRole.includes("team leader") || userRole.includes("administrator")) {
+    if (userRole.includes("team leader") || userRole.includes("administrator") || userRole.includes("managing partner")) {
       btnTeamTasks.style.display = "inline-block";
     } else {
       btnTeamTasks.style.display = "none";
@@ -854,11 +862,11 @@ function goBack() {
   document.getElementById("btnViewLogs").style.display = "inline-block";
 
   const role = who.textContent.toLowerCase();
-  const isAdmin = role.includes("administrator");
-  if (role.includes("team leader") || isAdmin) {
+  const hasAdminRights = role.includes("administrator") || role.includes("managing partner");
+  if (role.includes("team leader") || hasAdminRights) {
     document.getElementById("btnDownloadLogs").style.display = "inline-block";
   }
-  document.getElementById("btnAdminPanel").style.display = isAdmin ? "inline-block" : "none";
+  document.getElementById("btnAdminPanel").style.display = hasAdminRights ? "inline-block" : "none";
 
   document.getElementById("timeLogsView").style.display = "none";
   document.getElementById("teamTableView").style.display = "none";
@@ -968,7 +976,6 @@ function hideTeamTable() {
 // ============================================================
 
 function showAdminPanel() {
-  // Hide every non-admin view
   const hideIds = [
     "listView", "missionView", "tableView", "teamTableView",
     "timeLogsView", "allMissionsCard", "noWork", "myH", "filterContainer"
@@ -980,31 +987,35 @@ function showAdminPanel() {
 
   document.getElementById("adminView").style.display = "block";
 
-  // Hide "Back to App" for admins (they live in the admin panel)
-  const role = who.textContent.toLowerCase();
-  const isAdmin = role.includes("administrator");
+  // Always show the "Back to App" button
   const backBtn = document.querySelector("#adminView button[onclick='hideAdminPanel()']");
-  if (backBtn) backBtn.style.display = isAdmin ? "none" : "inline-block";
+  if (backBtn) backBtn.style.display = "inline-block";
 
   showAdminTab("teams");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function hideAdminPanel() {
-  // Admins shouldn't be able to leave the admin panel
-  const role = who.textContent.toLowerCase();
-  if (role.includes("administrator")) return;
-
   document.getElementById("adminView").style.display = "none";
-
-  if (!myMissionsData || myMissionsData.length === 0) {
-    document.getElementById("noWork").style.display = "block";
-    document.getElementById("listView").style.display = "none";
+  document.getElementById("listView").style.display = "block";
+  
+  if (isGlobalViewer()) {
+    // Admins & Partners: Show the global missions list
+    document.getElementById("myH").style.display = "none";
+    document.getElementById("filterContainer").style.display = "none";
+    document.getElementById("noWork").style.display = "none";
+    
+    const card = document.getElementById("allMissionsCard");
+    if (card) card.style.display = "block";
   } else {
-    document.getElementById("listView").style.display = "block";
-    document.getElementById("myH").style.display = "block";
-    document.getElementById("filterContainer").style.display = "flex";
-    document.getElementById("allMissionsCard").style.display = "block";
+    // Team Leaders & Members: Show their personal missions
+    if (!myMissionsData || myMissionsData.length === 0) {
+      document.getElementById("noWork").style.display = "block";
+    } else {
+      document.getElementById("myH").style.display = "block";
+      document.getElementById("filterContainer").style.display = "flex";
+      document.getElementById("allMissionsCard").style.display = "block";
+    }
   }
 
   document.getElementById("btnViewLogs").style.display = "inline-block";
@@ -1124,7 +1135,6 @@ async function openEmployeeForm(empId = null) {
   const editing = empId != null;
   const emp = editing ? adminEmployees.find(e => e.EmployeeID === empId) : {};
 
-  // Leaders we can assign this employee to (everyone except themselves)
   const teams = adminTeams.length ? adminTeams : await api("/api/admin/teams");
   adminTeams = teams;
   const leaderOptions = teams
@@ -1145,7 +1155,7 @@ async function openEmployeeForm(empId = null) {
     </label>
     <label style="display:block; margin-bottom:.5em;">Classification
       <select id="empClass" style="width:100%">
-        ${["Member", "Team Leader", "Administrator"].map(c =>
+        ${["Member", "Team Leader", "Administrator", "Managing Partner"].map(c =>
           `<option ${emp.Classification === c ? "selected" : ""}>${c}</option>`).join("")}
       </select>
     </label>
@@ -1299,10 +1309,12 @@ if (token) {
     .then(user => {
       who.textContent = user.EmployeeName + (user.Classification ? ` (${user.Classification})` : "");
       const role = (user.Classification || "").toLowerCase();
-      const isAdmin = role === "administrator";
-      document.getElementById("btnAdminPanel").style.display = isAdmin ? "inline-block" : "none";
+      const hasAdminRights = role === "administrator" || role === "managing partner";
+      
+      document.getElementById("btnAdminPanel").style.display = hasAdminRights ? "inline-block" : "none";
       document.getElementById("btnDownloadLogs").style.display =
-        (role === "team leader" || isAdmin) ? "inline-block" : "none";
+        (role === "team leader" || hasAdminRights) ? "inline-block" : "none";
+        
       document.getElementById("loginContainer").style.display = "none";
       document.getElementById("app").style.display = "block";
       return checkActiveTimer().then(() => loadMe());
