@@ -158,3 +158,180 @@ button:hover { background: #255a92; }
 .searchable-dropdown .dropdown-item:hover {
   background-color: #f0f0f0;
 }
+
+
+/* =========================================
+   TYMENARO OFFICIAL BRANDING
+   Navy Blue | Gold | White
+   ========================================= */
+
+:root {
+  --tyme-navy: #102b50;
+  --tyme-blue: #173e70;
+  --tyme-gold: #d9a52e;
+  --tyme-gold-light: #f0c75e;
+  --tyme-white: #ffffff;
+  --tyme-background: #f5f7fa;
+}
+
+/* General branded background */
+body {
+  background-color: var(--tyme-background);
+}
+
+/* Logo images */
+.brand-logo {
+  display: block;
+  height: auto;
+  object-fit: contain;
+}
+
+.brand-logo-login {
+  width: 100%;
+  max-width: 350px;
+  margin: 0 auto;
+}
+
+.brand-logo-header {
+  width: 190px;
+  max-width: 35%;
+}
+
+.brand-logo-admin {
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.brand-logo-admin-header {
+  width: 185px;
+  max-width: 35%;
+}
+
+/* Login branding */
+.brand-login {
+  width: 100%;
+  margin: 0 auto 1.5em;
+  text-align: center;
+}
+
+.login-heading {
+  color: var(--tyme-navy);
+  text-align: center;
+  font-weight: 700;
+  margin: 0 0 1.2em;
+}
+
+#loginContainer {
+  background: var(--tyme-white);
+  border: 1px solid #e1e6ed;
+  border-top: 4px solid var(--tyme-gold);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(16, 43, 80, 0.09);
+}
+
+/* Main application header */
+.brand-header {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  padding: 12px 0 18px;
+  margin-bottom: 18px;
+  border-bottom: 2px solid var(--tyme-gold);
+}
+
+.brand-header-title h1 {
+  color: var(--tyme-navy);
+  margin: 0 0 4px;
+  font-size: 1.65em;
+}
+
+.brand-header-title span {
+  color: #68788b;
+  font-size: 0.85em;
+  letter-spacing: 0.5px;
+}
+
+/* Super Admin branding */
+.brand-admin-login {
+  margin-bottom: 1.5em;
+}
+
+.brand-admin-heading {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--tyme-gold);
+}
+
+.brand-admin-heading h1 {
+  color: var(--tyme-navy);
+  font-size: 1.5em;
+}
+
+/* Branded buttons */
+button {
+  transition: background-color 0.2s ease, transform 0.15s ease;
+}
+
+button:not(.btn-outline):hover {
+  background-color: var(--tyme-blue);
+}
+
+#loginForm button {
+  background: var(--tyme-navy);
+  border-bottom: 3px solid var(--tyme-gold);
+  border-radius: 6px;
+  padding: 0.75em;
+  font-weight: 600;
+}
+
+#loginForm button:hover {
+  background: var(--tyme-blue);
+}
+
+/* Admin cards */
+.card {
+  border-color: #e1e6ed;
+  box-shadow: 0 2px 8px rgba(16, 43, 80, 0.04);
+}
+
+/* Responsive branding */
+@media (max-width: 600px) {
+  .brand-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .brand-logo-header {
+    max-width: 260px;
+    width: 80%;
+  }
+
+  .brand-header-title h1 {
+    font-size: 1.35em;
+  }
+
+  .brand-admin-heading {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .brand-logo-admin-header {
+    width: 75%;
+    max-width: 250px;
+  }
+
+  .brand-login {
+    margin-bottom: 1em;
+  }
+
+  .brand-logo-login {
+    max-width: 300px;
+  }
+}

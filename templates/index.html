@@ -2,12 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Audit Time Management</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>TymeNaro | Audit Time Management</title>
+  <link rel="icon" type="image/png" href="/static/images/TymeNaro_Small.png">
+  <link rel="stylesheet" href="/static/style.css?v=115">
 </head>
 <body>
   <div id="loginContainer">
-    <h1 style="margin-top: 0; text-align: center;">Audit Time Management</h1>
+    <div class="brand-login">
+      <img src="/static/images/TymeNaro_Small.png"
+           alt="TymeNaro - Precision. Intelligence. Performance."
+           class="brand-logo brand-logo-login">
+    </div>
+    <h2 class="login-heading">Audit Time Management</h2>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
       <input id="u" placeholder="Username" autocomplete="username" required>
       <input id="p" type="password" placeholder="Password" autocomplete="current-password" required>
@@ -17,7 +23,15 @@
   </div>
 
   <div id="app" style="display:none">
-    <h1>Audit Time Management</h1>
+    <header class="brand-header">
+      <img src="/static/images/TymeNaro_Small.png"
+           alt="TymeNaro"
+           class="brand-logo brand-logo-header">
+      <div class="brand-header-title">
+        <h1>Audit Time Management</h1>
+        <span>Precision. Intelligence. Performance.</span>
+      </div>
+    </header>
     <div class="row">
       <b id="who"></b>
       <button onclick="doLogout()">Logout</button>

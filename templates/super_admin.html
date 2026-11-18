@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Super Admin Portal</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <title>TymeNaro | Super Admin Portal</title>
+  <link rel="icon" type="image/png" href="/static/images/TymeNaro_Small.png">
+  <link rel="stylesheet" href="/static/style.css?v=115">
   <style>
     body { max-width: 800px; margin: 4em auto; font-family: system-ui; }
     .card { border: 1px solid #ddd; padding: 2em; border-radius: 8px; background: #fafafa; margin-bottom: 2em; }
@@ -36,7 +37,12 @@
   
   <!-- LOGIN VIEW -->
   <div id="loginView" class="card" style="max-width: 400px; margin: 0 auto;">
-    <h2>Super Admin Login</h2>
+    <div class="brand-login brand-admin-login">
+      <img src="/static/images/TymeNaro_Small.png"
+           alt="TymeNaro"
+           class="brand-logo brand-logo-admin">
+    </div>
+    <h2 class="login-heading">Super Admin Login</h2>
     <form id="loginForm">
       <div class="form-group">
         <label>Username</label>
@@ -54,7 +60,12 @@
   <!-- MAIN DASHBOARD VIEW -->
   <div id="dashboardView">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1em;">
-      <h1 style="margin: 0;">Super Admin Dashboard</h1>
+      <div class="brand-admin-heading">
+        <img src="/static/images/TymeNaro_Small.png"
+             alt="TymeNaro"
+             class="brand-logo brand-logo-admin-header">
+        <h1 style="margin: 0;">Super Admin Dashboard</h1>
+      </div>
       <button onclick="doLogout()" class="btn-outline">Logout</button>
     </div>
 

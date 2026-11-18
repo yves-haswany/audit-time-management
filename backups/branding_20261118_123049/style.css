@@ -1,0 +1,160 @@
+/* Global Styles */
+body {
+  font: 14px system-ui, sans-serif;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2em 1em;
+  color: #222;
+  box-sizing: border-box;
+}
+
+input, button {
+  font: inherit;
+  padding: .45em .7em;
+  margin: .2em;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+button {
+  background: #2b6cb0;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+button:hover { background: #255a92; }
+
+.card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1em;
+  margin: .6em 0;
+}
+
+.bar {
+  background: #eee;
+  border-radius: 6px;
+  height: 14px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.fill       { height: 100%; background: #4caf50; }
+.fill.warn  { background: #e53935; }
+.muted      { color: #666; font-size: .9em; }
+.row        { display: flex; gap: 1em; align-items: center; flex-wrap: wrap; }
+
+/* Login Container */
+#loginContainer {
+  margin: 10vh auto; /* Centers vertically and horizontally */
+  padding: 2em;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  max-width: 450px; /* Keeps it compact on large screens */
+  background: #fafafa;
+  box-sizing: border-box; /* Ensures padding doesn't break width */
+}
+
+#loginForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  margin-bottom: 1em;
+}
+
+#loginForm input, 
+#loginForm button {
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+/* =========================================
+   Responsive Design for Tablets and Mobiles
+   ========================================= */
+
+/* Tablets (Portrait) & Small Laptops */
+@media (max-width: 768px) {
+  body {
+    padding: 1em;
+  }
+  #loginContainer {
+    margin-top: 5vh; /* Moves the box up slightly on smaller screens */
+  }
+}
+
+/* Smartphones (Portrait) */
+@media (max-width: 480px) {
+  body {
+    padding: 0.5em;
+  }
+  
+  #loginContainer {
+    margin: 1em auto; /* Hugs the top of the screen */
+    padding: 1.5em 1em; /* Slightly less padding so inputs have room */
+    max-width: 100%; /* Uses the full width of the phone */
+    border-radius: 0; /* Optional: makes it look like a native app */
+    border-left: 0;
+    border-right: 0;
+  }
+
+  /* Prevent iOS Safari from zooming in automatically on input focus */
+  #loginForm input {
+    font-size: 16px; 
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+/* ... (keep all your existing CSS above this line) ... */
+
+/* Timer specific styles */
+@keyframes flashRed {
+  0% { background-color: #e3f2fd; border-color: #90caf9; }
+  50% { background-color: #ffebee; border-color: #e53935; }
+  100% { background-color: #e3f2fd; border-color: #90caf9; }
+}
+
+.timer-warning {
+  animation: flashRed 1s infinite;
+  border-width: 2px !important;
+}
+
+.timer-overtime {
+  background: #e53935 !important;
+  color: white !important;
+  border-color: #b71c1c !important;
+}
+
+.timer-overtime b, 
+.timer-overtime span,
+.timer-overtime .muted {
+  color: white !important;
+}
+
+.timer-overtime button {
+  background: #fff !important;
+  color: #e53935 !important;
+}
+/* Add this at the bottom of your CSS file */
+/* Add this to the bottom of your CSS file */
+.searchable-dropdown .dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  margin-top: 2px;
+}
+
+.searchable-dropdown .dropdown-item:hover {
+  background-color: #f0f0f0;
+}
