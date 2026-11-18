@@ -495,7 +495,7 @@ async function loadAllMissions() {
             <span class="muted">${m.WindowStart} → ${m.WindowEnd}</span>
             <span class="muted">· ${m.TasksTotal} tasks · ${m.AllocatedHours} h</span>
           </div>
-          <button onclick="exportMission(${m.MissionID}, '${m.CustomerName.replace(/'/g, "\\'")}')">Export to Excel</button>
+          
         </div>`).join("");
     }
     const card = document.getElementById("allMissionsCard");
