@@ -138,7 +138,6 @@
 
       <div id="missions" style="margin-top: 1em;"></div>
 
-      <!-- ADDED: Missing allMissionsCard and allMissions elements -->
       <div id="allMissionsCard" style="display:none; margin-top: 2em; border-top: 2px dashed #ccc; padding-top: 1em;">
         <h2>All Company Missions</h2>
         <div id="allMissions"></div>
@@ -265,10 +264,12 @@
       </div>
 
       <!-- Tab selector -->
-      <div style="margin-bottom:1em; display:flex; gap:.5em;">
-        <button id="tabBtnTeams"     onclick="showAdminTab('teams')"     style="background:#2b6cb0;">Teams</button>
-        <button id="tabBtnEmployees" onclick="showAdminTab('employees')" style="background:#2b6cb0;">Employees</button>
-        <button id="tabBtnClients"   onclick="showAdminTab('clients')"   style="background:#2b6cb0;">Clients</button>
+      <div style="margin-bottom:1em; display:flex; gap:.5em; flex-wrap:wrap;">
+        <button id="tabBtnTeams"      onclick="showAdminTab('teams')"      style="background:#2b6cb0;">Teams</button>
+        <button id="tabBtnEmployees"  onclick="showAdminTab('employees')"  style="background:#2b6cb0;">Employees</button>
+        <button id="tabBtnClients"    onclick="showAdminTab('clients')"    style="background:#2b6cb0;">Clients</button>
+        <button id="tabBtnServices"   onclick="showAdminTab('services')"   style="background:#2b6cb0;">Services</button>
+        <button id="tabBtnIndustries" onclick="showAdminTab('industries')" style="background:#2b6cb0;">Industries</button>
       </div>
 
       <!-- TEAMS TAB -->
@@ -316,14 +317,50 @@
             <thead>
               <tr style="background:#eee; text-align:left;">
                 <th style="padding:.8em; border-bottom:2px solid #ccc;">Customer Name</th>
-                <th style="padding:.8em; border-bottom:2px solid #ccc;">ID Honorary</th>
-                <th style="padding:.8em; border-bottom:2px solid #ccc;">Contact</th>
-                <th style="padding:.8em; border-bottom:2px solid #ccc;">Email</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Industry</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Type</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">ID</th>
                 <th style="padding:.8em; border-bottom:2px solid #ccc;">Phone</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">City</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Team Leader</th>
                 <th style="padding:.8em; border-bottom:2px solid #ccc;">Actions</th>
               </tr>
             </thead>
             <tbody id="adminClientsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SERVICES TAB -->
+      <div id="adminTabServices" style="display:none;">
+        <button onclick="openServiceForm()" style="background:#4caf50;">+ New Service</button>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin-top:1em; background:#fff;">
+            <thead>
+              <tr style="background:#eee; text-align:left;">
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Service Name</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Engagement Letter (preview)</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminServicesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- INDUSTRIES TAB -->
+      <div id="adminTabIndustries" style="display:none;">
+        <button onclick="openIndustryForm()" style="background:#4caf50;">+ New Industry</button>
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; margin-top:1em; background:#fff;">
+            <thead>
+              <tr style="background:#eee; text-align:left;">
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Industry Group</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Industry Name</th>
+                <th style="padding:.8em; border-bottom:2px solid #ccc;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminIndustriesBody"></tbody>
           </table>
         </div>
       </div>
@@ -343,7 +380,7 @@
 
   </div>
 
-  <!-- UPDATED: Cache buster to force the browser to load the new JS -->
-  <script src="/static/app.js?v=105"></script>
+  <!-- Cache buster — bump whenever app.js or style.css changes -->
+  <script src="/static/app.js?v=114"></script>
 </body>
 </html>

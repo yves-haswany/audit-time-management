@@ -1,5 +1,5 @@
 """Admin endpoints — Excel exporter, mission list, and admin CRUD for
-teams / employees / clients."""
+teams / employees / clients / services / industries."""
 from __future__ import annotations
 
 import os
@@ -31,7 +31,7 @@ def _require_admin(user=Depends(current_user)):
 
 
 # ============================================================
-# EXISTING ROUTES — unchanged
+# EXISTING ROUTES
 # ============================================================
 
 @router.get("/missions")
@@ -200,7 +200,7 @@ def download_timelogs(user=Depends(current_user)):
 
 
 # ============================================================
-# ADMIN CRUD — TEAMS  (model: Employee.TeamLeader, self-referencing)
+# ADMIN CRUD — TEAMS
 # ============================================================
 
 class TeamIn(BaseModel):
@@ -293,13 +293,11 @@ def create_team(payload: TeamIn, user=Depends(_require_admin)):
 
 @router.patch("/teams/{leader_employee_id}")
 def update_team(leader_employee_id: int, payload: TeamIn, user=Depends(_require_admin)):
-    """Same semantics as create — treats `leader_employee_id` as the leader id."""
     return create_team(payload, user)
 
 
 @router.delete("/teams/{leader_employee_id}")
 def delete_team(leader_employee_id: int, user=Depends(_require_admin)):
-    """Detach all members from this leader (does not delete employees)."""
     c = connect()
     leader = c.execute(
         "SELECT EmployeeName FROM Employee WHERE EmployeeID = ?",
@@ -323,9 +321,9 @@ class EmployeeIn(BaseModel):
     Username: str
     Password: Optional[str] = None
     Classification: str = "Member"
-    TeamID: Optional[int] = None          # unused with TeamLeader model
-    Role: str = "member"                  # unused with TeamLeader model
-    TeamLeader: Optional[str] = None      # name of the leader they report to
+    TeamID: Optional[int] = None
+    Role: str = "member"
+    TeamLeader: Optional[str] = None
 
 
 @router.get("/employees")
@@ -421,8 +419,6 @@ def delete_employee(emp_id: int, user=Depends(_require_admin)):
     if not emp:
         c.close()
         raise HTTPException(404, "Employee not found")
-
-    # Detach anyone who reported to this employee
     c.execute("UPDATE Employee SET TeamLeader = NULL WHERE TeamLeader = ?", (emp["EmployeeName"],))
     c.execute("DELETE FROM Employee WHERE EmployeeID = ?", (emp_id,))
     c.commit()
@@ -433,9 +429,6 @@ def delete_employee(emp_id: int, user=Depends(_require_admin)):
 # ============================================================
 # ADMIN CRUD — CLIENTS
 # ============================================================
-# Note: your Mission table stores CustomerName inline, and there is no
-# Client table in the current schema. These endpoints operate on a `Client`
-# table you must create in init_db(). See notes below.
 
 class ClientIn(BaseModel):
     CustomerName: str
@@ -443,40 +436,48 @@ class ClientIn(BaseModel):
     Contact: Optional[str] = None
     Email: Optional[str] = None
     Phone: Optional[str] = None
+    Phone2: Optional[str] = None
     Address: Optional[str] = None
+    Building: Optional[str] = None
+    Street: Optional[str] = None
+    City: Optional[str] = None
+    Region: Optional[str] = None
+    Country: Optional[str] = None
+    Nationality: Optional[str] = None
+    ClientType: Optional[str] = None
+    TeamLeader: Optional[str] = None
+    IndustryID: Optional[int] = None
 
 
 @router.get("/clients")
 def list_clients(user=Depends(_require_admin)):
     c = connect()
-    # Fall back to distinct customers from Mission if Client table is absent.
     try:
-        rows = c.execute(
-            """
-            SELECT ClientID, CustomerName, IDHonorary, Contact, Email, Phone, Address
-            FROM Client
-            ORDER BY CustomerName
-            """
-        ).fetchall()
+        rows = c.execute("""
+            SELECT c.ClientID, c.CustomerName, c.IDHonorary, c.Contact,
+                   c.Email, c.Phone, c.Phone2, c.Address, c.Building, c.Street,
+                   c.City, c.Region, c.Country, c.Nationality, c.ClientType,
+                   c.TeamLeader, c.IndustryID,
+                   i.Industry AS IndustryName,
+                   i.ClientType AS IndustryGroup
+            FROM Client c
+            LEFT JOIN Industry i ON i.IndustryID = c.IndustryID
+            ORDER BY c.CustomerName
+        """).fetchall()
         c.close()
         return [dict(r) for r in rows]
     except Exception:
-        rows = c.execute(
-            """
-            SELECT
-                MIN(m.IDHonorary) AS IDHonorary,
-                m.CustomerName,
-                NULL AS ClientID,
-                NULL AS Contact,
-                NULL AS Email,
-                NULL AS Phone,
-                NULL AS Address
-            FROM Mission m
-            WHERE m.CustomerName IS NOT NULL
-            GROUP BY m.CustomerName
-            ORDER BY m.CustomerName
-            """
-        ).fetchall()
+        rows = c.execute("""
+            SELECT c.ClientID, c.CustomerName, c.IDHonorary, c.Contact,
+                   c.Email, c.Phone, NULL AS Phone2, c.Address,
+                   NULL AS Building, NULL AS Street, NULL AS City,
+                   NULL AS Region, NULL AS Country, NULL AS Nationality,
+                   NULL AS ClientType, NULL AS TeamLeader, c.IndustryID,
+                   i.Industry AS IndustryName, i.ClientType AS IndustryGroup
+            FROM Client c
+            LEFT JOIN Industry i ON i.IndustryID = c.IndustryID
+            ORDER BY c.CustomerName
+        """).fetchall()
         c.close()
         return [dict(r) for r in rows]
 
@@ -485,51 +486,46 @@ def list_clients(user=Depends(_require_admin)):
 def create_client(payload: ClientIn, user=Depends(_require_admin)):
     c = connect()
     try:
-        cur = c.execute(
-            """
-            INSERT INTO Client (CustomerName, IDHonorary, Contact, Email, Phone, Address)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload.CustomerName,
-                payload.IDHonorary,
-                payload.Contact,
-                payload.Email,
-                payload.Phone,
-                payload.Address,
-            ),
-        )
-        client_id = cur.lastrowid
+        cur = c.execute("""
+            INSERT INTO Client
+              (CustomerName, IDHonorary, Contact, Email, Phone, Phone2,
+               Address, Building, Street, City, Region, Country, Nationality,
+               ClientType, TeamLeader, IndustryID)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            payload.CustomerName, payload.IDHonorary, payload.Contact,
+            payload.Email, payload.Phone, payload.Phone2,
+            payload.Address, payload.Building, payload.Street, payload.City,
+            payload.Region, payload.Country, payload.Nationality,
+            payload.ClientType, payload.TeamLeader, payload.IndustryID,
+        ))
+        cid = cur.lastrowid
         c.commit()
     except Exception as e:
         c.close()
-        raise HTTPException(
-            400,
-            f"{e} — if the 'Client' table does not exist, add it to init_db().",
-        )
+        raise HTTPException(400, str(e))
     c.close()
-    return {"ClientID": client_id}
+    return {"ClientID": cid}
 
 
 @router.patch("/clients/{client_id}")
 def update_client(client_id: int, payload: ClientIn, user=Depends(_require_admin)):
     c = connect()
     try:
-        c.execute(
-            """
-            UPDATE Client SET CustomerName=?, IDHonorary=?, Contact=?,
-                Email=?, Phone=?, Address=? WHERE ClientID=?
-            """,
-            (
-                payload.CustomerName,
-                payload.IDHonorary,
-                payload.Contact,
-                payload.Email,
-                payload.Phone,
-                payload.Address,
-                client_id,
-            ),
-        )
+        c.execute("""
+            UPDATE Client SET
+              CustomerName=?, IDHonorary=?, Contact=?, Email=?, Phone=?,
+              Phone2=?, Address=?, Building=?, Street=?, City=?, Region=?,
+              Country=?, Nationality=?, ClientType=?, TeamLeader=?, IndustryID=?
+            WHERE ClientID=?
+        """, (
+            payload.CustomerName, payload.IDHonorary, payload.Contact,
+            payload.Email, payload.Phone, payload.Phone2,
+            payload.Address, payload.Building, payload.Street, payload.City,
+            payload.Region, payload.Country, payload.Nationality,
+            payload.ClientType, payload.TeamLeader, payload.IndustryID,
+            client_id,
+        ))
         c.commit()
     except Exception as e:
         c.close()
@@ -547,5 +543,145 @@ def delete_client(client_id: int, user=Depends(_require_admin)):
     except Exception as e:
         c.close()
         raise HTTPException(400, str(e))
+    c.close()
+    return {"ok": True}
+
+
+# ============================================================
+# ADMIN CRUD — SERVICES
+# ============================================================
+
+class ServiceIn(BaseModel):
+    ServiceName: str
+    Letter: Optional[str] = ""
+
+
+@router.get("/services")
+def list_services(user=Depends(_require_admin)):
+    c = connect()
+    rows = c.execute("""
+        SELECT ServiceID, ServiceName, COALESCE(Letter, '') AS Letter
+        FROM Service
+        ORDER BY ServiceName
+    """).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
+@router.post("/services")
+def create_service(payload: ServiceIn, user=Depends(_require_admin)):
+    c = connect()
+    try:
+        cur = c.execute(
+            "INSERT INTO Service (TenantID, ServiceName, Letter) VALUES (1, ?, ?)",
+            (payload.ServiceName.strip(), payload.Letter or ""),
+        )
+        sid = cur.lastrowid
+        c.commit()
+    except Exception as e:
+        c.close()
+        raise HTTPException(400, str(e))
+    c.close()
+    return {"ServiceID": sid}
+
+
+@router.patch("/services/{service_id}")
+def update_service(service_id: int, payload: ServiceIn, user=Depends(_require_admin)):
+    c = connect()
+    try:
+        c.execute(
+            "UPDATE Service SET ServiceName = ?, Letter = ? WHERE ServiceID = ?",
+            (payload.ServiceName.strip(), payload.Letter or "", service_id),
+        )
+        c.commit()
+    except Exception as e:
+        c.close()
+        raise HTTPException(400, str(e))
+    c.close()
+    return {"ok": True}
+
+
+@router.delete("/services/{service_id}")
+def delete_service(service_id: int, user=Depends(_require_admin)):
+    c = connect()
+    used = c.execute(
+        "SELECT COUNT(*) AS n FROM Mission WHERE ServiceID = ?",
+        (service_id,),
+    ).fetchone()
+    if used and used["n"] > 0:
+        c.close()
+        raise HTTPException(400, "Cannot delete: this service is used by existing missions.")
+    c.execute("DELETE FROM Service WHERE ServiceID = ?", (service_id,))
+    c.commit()
+    c.close()
+    return {"ok": True}
+
+
+# ============================================================
+# ADMIN CRUD — INDUSTRIES
+# ============================================================
+
+class IndustryIn(BaseModel):
+    ClientType: str
+    Industry: str
+
+
+@router.get("/industries")
+def list_industries(user=Depends(_require_admin)):
+    c = connect()
+    rows = c.execute("""
+        SELECT IndustryID, ClientType, Industry
+        FROM Industry
+        ORDER BY ClientType, Industry
+    """).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
+@router.post("/industries")
+def create_industry(payload: IndustryIn, user=Depends(_require_admin)):
+    c = connect()
+    try:
+        cur = c.execute(
+            "INSERT INTO Industry (ClientType, Industry) VALUES (?, ?)",
+            (payload.ClientType.strip(), payload.Industry.strip()),
+        )
+        iid = cur.lastrowid
+        c.commit()
+    except Exception as e:
+        c.close()
+        raise HTTPException(400, str(e))
+    c.close()
+    return {"IndustryID": iid}
+
+
+@router.patch("/industries/{industry_id}")
+def update_industry(industry_id: int, payload: IndustryIn, user=Depends(_require_admin)):
+    c = connect()
+    try:
+        c.execute(
+            "UPDATE Industry SET ClientType = ?, Industry = ? WHERE IndustryID = ?",
+            (payload.ClientType.strip(), payload.Industry.strip(), industry_id),
+        )
+        c.commit()
+    except Exception as e:
+        c.close()
+        raise HTTPException(400, str(e))
+    c.close()
+    return {"ok": True}
+
+
+@router.delete("/industries/{industry_id}")
+def delete_industry(industry_id: int, user=Depends(_require_admin)):
+    c = connect()
+    used = c.execute(
+        "SELECT COUNT(*) AS n FROM Client WHERE IndustryID = ?",
+        (industry_id,),
+    ).fetchone()
+    if used and used["n"] > 0:
+        c.close()
+        raise HTTPException(400, "Cannot delete: this industry is assigned to existing clients.")
+    c.execute("DELETE FROM Industry WHERE IndustryID = ?", (industry_id,))
+    c.commit()
     c.close()
     return {"ok": True}

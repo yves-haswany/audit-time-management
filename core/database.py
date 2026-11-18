@@ -13,11 +13,49 @@ CREATE TABLE IF NOT EXISTS Service(
   ServiceID    INTEGER PRIMARY KEY AUTOINCREMENT,
   TenantID     INTEGER REFERENCES Tenant(TenantID),
   ServiceName  TEXT NOT NULL,
+  Letter       TEXT DEFAULT '',
   UNIQUE(TenantID, ServiceName));
+
+CREATE TABLE IF NOT EXISTS SectionCatalog(
+  SectionID         INTEGER PRIMARY KEY AUTOINCREMENT,
+  Industry          TEXT NOT NULL,
+  Service           TEXT NOT NULL,
+  SectionName       TEXT,
+  SubSectionName    TEXT,
+  SubSubSectionName TEXT,
+  Remarks           TEXT,
+  DefaultHours      REAL DEFAULT 1,
+  UNIQUE(Industry, Service, SectionName, SubSectionName, SubSubSectionName));
+
+CREATE TABLE IF NOT EXISTS Industry(
+  IndustryID   INTEGER PRIMARY KEY AUTOINCREMENT,
+  ClientType   TEXT NOT NULL,
+  Industry     TEXT NOT NULL,
+  UNIQUE(ClientType, Industry));
+
+CREATE TABLE IF NOT EXISTS Client(
+  ClientID     INTEGER PRIMARY KEY AUTOINCREMENT,
+  TenantID     INTEGER REFERENCES Tenant(TenantID),
+  CustomerName TEXT NOT NULL,
+  IDHonorary   TEXT,
+  Contact      TEXT,
+  Email        TEXT,
+  Phone        TEXT,
+  Phone2       TEXT,
+  Address      TEXT,
+  Building     TEXT,
+  Street       TEXT,
+  City         TEXT,
+  Region       TEXT,
+  Country      TEXT,
+  Nationality  TEXT,
+  ClientType   TEXT,
+  TeamLeader   TEXT,
+  IndustryID   INTEGER REFERENCES Industry(IndustryID));
 
 CREATE TABLE IF NOT EXISTS Employee(
   EmployeeID   INTEGER PRIMARY KEY AUTOINCREMENT,
-  TenantID     INTEGER REFERENCES Tenant(TenantID), -- NEW: Multi-tenant link
+  TenantID     INTEGER REFERENCES Tenant(TenantID),
   EmployeeName TEXT NOT NULL,
   LoginCode    TEXT NOT NULL,
   Username     TEXT NOT NULL,
@@ -31,10 +69,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_emp_uname ON Employee(LOWER(Username));
 
 CREATE TABLE IF NOT EXISTS Mission(
   MissionID    INTEGER PRIMARY KEY AUTOINCREMENT,
-  TenantID     INTEGER REFERENCES Tenant(TenantID), -- NEW
+  TenantID     INTEGER REFERENCES Tenant(TenantID),
   IDHonorary   INTEGER NOT NULL,
   CustomerName TEXT NOT NULL,
-  ServiceID    INTEGER REFERENCES Service(ServiceID), -- CHANGED: Link to Service table
+  ServiceID    INTEGER REFERENCES Service(ServiceID),
   FiscalYear   TEXT,
   WindowStart  TEXT NOT NULL,
   WindowEnd    TEXT NOT NULL,
@@ -43,8 +81,8 @@ CREATE TABLE IF NOT EXISTS Mission(
 CREATE TABLE IF NOT EXISTS MissionTask(
   TaskID          INTEGER PRIMARY KEY AUTOINCREMENT,
   MissionID       INTEGER REFERENCES Mission(MissionID),
-  TaskName        TEXT NOT NULL,      -- NEW: Replaces SubSubSectionName
-  TaskDescription TEXT,               -- NEW: Replaces Section/SubSection
+  TaskName        TEXT NOT NULL,
+  TaskDescription TEXT,
   TeamMemberName  TEXT NOT NULL,
   EmployeeID      INTEGER REFERENCES Employee(EmployeeID),
   AllocatedHours  REAL NOT NULL DEFAULT 0,
@@ -65,7 +103,7 @@ CREATE TABLE IF NOT EXISTS WorkSession(
   TaskID     INTEGER REFERENCES MissionTask(TaskID),
   LoginTime  TEXT NOT NULL,
   LogoutTime TEXT,
-  TimeLogID  INTEGER, 
+  TimeLogID  INTEGER,
   JobDesc    TEXT);
 
 CREATE TABLE IF NOT EXISTS Token(
@@ -116,8 +154,45 @@ def connect() -> sqlite3.Connection:
     c.execute("PRAGMA foreign_keys=ON")
     return c
 
+def _column_exists(c, table, column) -> bool:
+    rows = c.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r["name"] == column for r in rows)
+
+def _table_exists(c, table) -> bool:
+    row = c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
+
+def _migrate(c) -> None:
+    """Apply safe migrations to an existing database."""
+
+    # ---- Service.Letter ----
+    if _table_exists(c, "Service") and not _column_exists(c, "Service", "Letter"):
+        c.execute("ALTER TABLE Service ADD COLUMN Letter TEXT DEFAULT ''")
+
+    # ---- Client: extended columns (from Customers.xls) ----
+    new_client_cols = [
+        ("Phone2",       "TEXT"),
+        ("Building",     "TEXT"),
+        ("Street",       "TEXT"),
+        ("City",         "TEXT"),
+        ("Region",       "TEXT"),
+        ("Country",      "TEXT"),
+        ("Nationality",  "TEXT"),
+        ("ClientType",   "TEXT"),
+        ("TeamLeader",   "TEXT"),
+        ("IndustryID",   "INTEGER"),
+    ]
+    if _table_exists(c, "Client"):
+        for name, typ in new_client_cols:
+            if not _column_exists(c, "Client", name):
+                c.execute(f"ALTER TABLE Client ADD COLUMN {name} {typ}")
+
 def init_db() -> None:
     c = connect()
     c.executescript(SCHEMA)
+    _migrate(c)
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_client_name ON Client(TenantID, CustomerName)")
     c.commit()
     c.close()
