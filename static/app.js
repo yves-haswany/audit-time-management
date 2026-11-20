@@ -21,6 +21,7 @@ let adminEmployees = [];
 let adminClients = [];
 let adminServices = [];
 let adminIndustries = [];
+let adminSections = [];
 let adminModalContext = null;
 let adminCurrentTab = null;
 
@@ -51,16 +52,25 @@ async function doLogin(event) {
   try {
     const r = await api("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username: u.value, password: p.value }),
+      body: JSON.stringify({
+  company_code: document.getElementById("c").value.trim().toUpperCase(),
+  username: u.value.trim(),
+  password: p.value
+}),
     });
     token = r.token;
     localStorage.token = token;
+    const tenantNameElement = document.getElementById("tenantName");
 
+if (tenantNameElement) {
+    tenantNameElement.textContent =
+        r.tenant?.CompanyName || "TymeNaro";
+}
     const role = (r.employee.Classification || "").toLowerCase();
     who.textContent = r.employee.EmployeeName + (r.employee.Classification ? ` (${r.employee.Classification})` : "");
 
     const hasAdminRights = role === "administrator" || role === "managing partner";
-    document.getElementById("btnAdminPanel").style.display = hasAdminRights ? "inline-block" : "none";
+   
     document.getElementById("btnDownloadLogs").style.display =
       (role === "team leader" || hasAdminRights) ? "inline-block" : "none";
 
@@ -72,12 +82,68 @@ async function doLogin(event) {
     }
 
     await checkActiveTimer();
-    loadMe();
+    await loadMe();
   } catch (e) {
     alert("Login failed: " + e.message);
   }
 }
 
+async function loadLoginCompanies() {
+  const select = document.getElementById("c");
+  if (!select) return;
+
+  select.disabled = true;
+
+  try {
+    const response = await fetch("/api/auth/companies");
+
+    if (!response.ok) {
+      throw new Error("Could not load the company list.");
+    }
+
+    const data = await response.json();
+    const companies = data.companies || [];
+
+    select.replaceChildren();
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = companies.length
+      ? "Select your company"
+      : "No active companies available";
+
+    select.appendChild(placeholder);
+
+    for (const company of companies) {
+      const option = document.createElement("option");
+      option.value = company.CompanyCode;
+      option.textContent =
+        `${company.CompanyName} (${company.CompanyCode})`;
+
+      select.appendChild(option);
+    }
+
+    select.disabled = companies.length === 0;
+
+  } catch (error) {
+    console.error("Company list loading error:", error);
+
+    select.replaceChildren();
+
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Unable to load companies";
+
+    select.appendChild(option);
+    select.disabled = true;
+  }
+  
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", loadLoginCompanies);
+} else {
+  loadLoginCompanies();
+}
 async function doLogout() {
   if (activeTask) {
     if (!confirm("You have a running timer. Logging out will stop it. Continue?")) return;
@@ -149,6 +215,26 @@ async function downloadTimeLogs() {
 // ============================================================
 
 async function showTimeLogs() {
+  const dashboard = document.getElementById("homeDashboard");
+if (dashboard) {
+    dashboard.style.display = "none";
+}
+
+// Hide the other main application views.
+[
+    "listView",
+    "missionView",
+    "tableView",
+    "teamTableView",
+    "adminView",
+    "allMissionsCard",
+    "noWork"
+].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) {
+        element.style.display = "none";
+    }
+});
   const hideIds = ["listView", "missionView", "tableView", "teamTableView", "adminView"];
   hideIds.forEach(id => {
     const el = document.getElementById(id);
@@ -231,8 +317,14 @@ function clearLogFilters() {
 }
 
 function hideTimeLogs() {
-  document.getElementById("timeLogsView").style.display = "none";
-  document.getElementById("listView").style.display = "block";
+    // Hide the Time Logs page.
+    const timeLogsView = document.getElementById("timeLogsView");
+    if (timeLogsView) {
+        timeLogsView.style.display = "none";
+    }
+
+    // Return to the Management Dashboard.
+    showHomeDashboard();
 }
 
 // ============================================================
@@ -269,7 +361,11 @@ async function loadMe() {
     if (card) card.style.display = "none";
   }
 
+  if (isGlobal) {
+  showHomeDashboard();
+} else {
   document.getElementById("listView").style.display = "block";
+}
 }
 
 function toggleMissionView() {
@@ -802,60 +898,132 @@ function hideTeamTable() {
   document.getElementById("teamTableView").style.display = "none";
   document.getElementById("missionView").style.display = "block";
 }
+function showHomeDashboard() {
+    hideMainViews();
 
+    // Explicitly hide the Administration panel and its contents.
+    const adminView = document.getElementById("adminView");
+    if (adminView) {
+        adminView.style.display = "none";
+    }
+
+    // Hide the mission and time-log views.
+    const missionView = document.getElementById("missionView");
+    if (missionView) missionView.style.display = "none";
+
+    const timeLogsView = document.getElementById("timeLogsView");
+    if (timeLogsView) timeLogsView.style.display = "none";
+
+    // Display the management dashboard.
+    const dashboard = document.getElementById("homeDashboard");
+    if (dashboard) {
+        dashboard.style.display = "block";
+    }
+
+    // Reset the administration tab selection.
+    adminCurrentTab = null;
+}
+
+function openMissionWorkspace() {
+  document.getElementById("homeDashboard").style.display = "none";
+
+  document.getElementById("adminView").style.display = "none";
+  document.getElementById("timeLogsView").style.display = "none";
+
+  document.getElementById("listView").style.display = "block";
+
+  if (isGlobalViewer()) {
+    document.getElementById("myH").style.display = "none";
+    document.getElementById("filterContainer").style.display = "none";
+    document.getElementById("allMissionsCard").style.display = "block";
+  }
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function openAdminSection(tab) {
+  showAdminPanel(tab);
+}
 // ============================================================
 // ADMIN PANEL
 // ============================================================
 
-function showAdminPanel() {
-  const hideIds = ["listView", "missionView", "tableView", "teamTableView", "timeLogsView", "allMissionsCard", "noWork", "myH", "filterContainer"];
+function showAdminPanel(tab = "teams") {
+
+  const hideIds = [
+    "homeDashboard",
+    "listView",
+    "missionView",
+    "tableView",
+    "teamTableView",
+    "timeLogsView",
+    "allMissionsCard",
+    "noWork",
+    "myH",
+    "filterContainer"
+  ];
+
   hideIds.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = "none";
   });
+
   document.getElementById("adminView").style.display = "block";
-  const backBtn = document.querySelector("#adminView button[onclick='hideAdminPanel()']");
-  if (backBtn) backBtn.style.display = "inline-block";
-  showAdminTab("teams");
+
+  // Select the requested administration section.
+  showAdminTab(tab);
+
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function hideAdminPanel() {
   document.getElementById("adminView").style.display = "none";
-  document.getElementById("listView").style.display = "block";
+
   if (isGlobalViewer()) {
-    document.getElementById("myH").style.display = "none";
-    document.getElementById("filterContainer").style.display = "none";
-    document.getElementById("noWork").style.display = "none";
-    const card = document.getElementById("allMissionsCard");
-    if (card) card.style.display = "block";
+    showHomeDashboard();
   } else {
-    if (!myMissionsData || myMissionsData.length === 0) {
-      document.getElementById("noWork").style.display = "block";
-    } else {
-      document.getElementById("myH").style.display = "block";
-      document.getElementById("filterContainer").style.display = "flex";
-      document.getElementById("allMissionsCard").style.display = "block";
-    }
+    document.getElementById("listView").style.display = "block";
   }
-  document.getElementById("btnViewLogs").style.display = "inline-block";
+
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function showAdminTab(tab) {
   adminCurrentTab = tab;
-  const tabs = ["teams", "employees", "clients", "services", "industries"];
+
+  const tabs = [
+    "teams",
+    "employees",
+    "clients",
+    "services",
+    "industries",
+    "sections" // NEW
+  ];
+
   tabs.forEach(t => {
-    const el = document.getElementById("adminTab" + t[0].toUpperCase() + t.slice(1));
-    if (el) el.style.display = (t === tab) ? "block" : "none";
-    const btn = document.getElementById("tabBtn" + t[0].toUpperCase() + t.slice(1));
-    if (btn) btn.style.background = (t === tab) ? "#1a4f82" : "#2b6cb0";
+    const el = document.getElementById(
+      "adminTab" + t[0].toUpperCase() + t.slice(1)
+    );
+
+    if (el) {
+      el.style.display = (t === tab) ? "block" : "none";
+    }
+
+    const btn = document.getElementById(
+      "tabBtn" + t[0].toUpperCase() + t.slice(1)
+    );
+
+    if (btn) {
+      btn.style.background = (t === tab) ? "#1a4f82" : "#2b6cb0";
+    }
   });
+
   if (tab === "teams") loadAdminTeams();
   if (tab === "employees") loadAdminEmployees();
   if (tab === "clients") loadAdminClients();
   if (tab === "services") loadAdminServices();
   if (tab === "industries") loadAdminIndustries();
+  if (tab === "sections") loadAdminSections(); // NEW
 }
 
 // ---------- TEAMS ----------
@@ -1167,7 +1335,237 @@ async function deleteIndustry(industryId) {
     loadAdminIndustries();
   } catch (e) { alert("Delete failed: " + e.message); }
 }
+function sectionEscape(value) {
+    if (value === null || value === undefined) {
+        return "";
+    }
 
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+async function loadAdminSections() {
+  const tbody = document.getElementById("adminSectionsBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="8" style="text-align:center;padding:1em;">
+        Loading Section Catalog...
+      </td>
+    </tr>`;
+
+  try {
+    adminSections = await api("/api/admin/sections");
+
+    const industrySelect =
+      document.getElementById("sectionFilterIndustry");
+
+    const serviceSelect =
+      document.getElementById("sectionFilterService");
+
+    const oldIndustry = industrySelect?.value || "all";
+    const oldService = serviceSelect?.value || "all";
+
+    const industries = [
+      ...new Set(adminSections.map(x => x.Industry).filter(Boolean))
+    ].sort((a, b) => a.localeCompare(b));
+
+    const services = [
+      ...new Set(adminSections.map(x => x.Service).filter(Boolean))
+    ].sort((a, b) => a.localeCompare(b));
+
+    if (industrySelect) {
+      industrySelect.innerHTML =
+        `<option value="all">All Industries</option>` +
+        industries.map(v =>
+          `<option value="${sectionEscape(v)}">${sectionEscape(v)}</option>`
+        ).join("");
+    }
+
+    if (serviceSelect) {
+      serviceSelect.innerHTML =
+        `<option value="all">All Services</option>` +
+        services.map(v =>
+          `<option value="${sectionEscape(v)}">${sectionEscape(v)}</option>`
+        ).join("");
+    }
+
+    if (industrySelect && industries.includes(oldIndustry)) {
+      industrySelect.value = oldIndustry;
+    }
+
+    if (serviceSelect && services.includes(oldService)) {
+      serviceSelect.value = oldService;
+    }
+
+    renderAdminSections();
+
+  } catch (e) {
+    console.error("Failed to load Section Catalog:", e);
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="color:#c00;padding:1em;">
+          Failed to load Section Catalog: ${sectionEscape(e.message)}
+        </td>
+      </tr>`;
+  }
+}
+function renderAdminSections() {
+  const tbody = document.getElementById("adminSectionsBody");
+  if (!tbody) return;
+
+  const industry =
+    document.getElementById("sectionFilterIndustry")?.value || "all";
+
+  const service =
+    document.getElementById("sectionFilterService")?.value || "all";
+
+  const q = (
+    document.getElementById("sectionSearchInput")?.value || ""
+  ).trim().toLowerCase();
+
+  const rows = adminSections.filter(x => {
+    if (industry !== "all" && x.Industry !== industry) return false;
+    if (service !== "all" && x.Service !== service) return false;
+
+    if (q && ![
+      x.Industry,
+      x.Service,
+      x.SectionName,
+      x.SubSectionName,
+      x.SubSubSectionName,
+      x.Remarks
+    ].some(v => String(v ?? "").toLowerCase().includes(q))) {
+      return false;
+    }
+
+    return true;
+  });
+
+  tbody.innerHTML = rows.map(x => `
+    <tr style="border-bottom:1px solid #eee;">
+      <td>${sectionEscape(x.Industry)}</td>
+      <td>${sectionEscape(x.Service)}</td>
+      <td>${sectionEscape(x.SectionName || "—")}</td>
+      <td>${sectionEscape(x.SubSectionName || "—")}</td>
+      <td>${sectionEscape(x.SubSubSectionName || "—")}</td>
+      <td style="text-align:right;">
+        ${Number(x.DefaultHours ?? 1).toFixed(2)}
+      </td>
+      <td>${sectionEscape(x.Remarks || "")}</td>
+      <td>
+        <button onclick="openSectionForm(${Number(x.SectionID)})">
+          Edit
+        </button>
+        <button
+          onclick="deleteSection(${Number(x.SectionID)})"
+          style="background:#e53935;">
+          Delete
+        </button>
+      </td>
+    </tr>
+  `).join("") || `
+    <tr>
+      <td colspan="8" style="text-align:center;padding:1em;">
+        No Section Catalog records match your filters.
+      </td>
+    </tr>`;
+
+  const count = document.getElementById("sectionCatalogCount");
+
+  if (count) {
+    count.textContent = `${rows.length} of ${adminSections.length} records`;
+  }
+}
+function openSectionForm(sectionId = null) {
+  const editing = sectionId != null;
+
+  const s = editing
+    ? adminSections.find(
+        x => Number(x.SectionID) === Number(sectionId)
+      )
+    : {};
+
+  if (editing && !s) {
+    alert("Section Catalog record not found. Refresh the list and try again.");
+    return;
+  }
+
+  const field = (id, label, value, required = false, type = "text") => `
+    <label style="display:block;margin-bottom:.65em;">
+      ${label}${required ? " *" : ""}
+      <input
+        id="${id}"
+        type="${type}"
+        ${required ? "required" : ""}
+        value="${sectionEscape(value ?? "")}"
+        style="width:100%;box-sizing:border-box;padding:.55em;">
+    </label>`;
+
+  document.getElementById("adminModalTitle").textContent =
+    editing ? "Edit Section Catalog Record" : "New Section Catalog Record";
+
+  document.getElementById("adminModalFields").innerHTML =
+    field("secIndustry", "Industry", s.Industry, true) +
+    field("secService", "Service", s.Service, true) +
+    field("secSection", "Section", s.SectionName) +
+    field("secSubSection", "Subsection", s.SubSectionName) +
+    field("secSubSubSection", "Sub-subsection", s.SubSubSectionName) +
+    field("secDefaultHours", "Default Hours", s.DefaultHours ?? 1, true, "number") +
+    `<label style="display:block;margin-bottom:.65em;">
+      Remarks
+      <textarea id="secRemarks" rows="3"
+        style="width:100%;box-sizing:border-box;padding:.55em;">${sectionEscape(s.Remarks || "")}</textarea>
+    </label>
+    <p class="muted" style="font-size:.85em;">
+      Industry and Service are required. Enter at least one Section,
+      Subsection, or Sub-subsection.
+    </p>`;
+
+  document.getElementById("secDefaultHours").min = "0";
+  document.getElementById("secDefaultHours").step = "0.25";
+
+  adminModalContext = {
+    type: "section",
+    mode: editing ? "edit" : "create",
+    id: sectionId
+  };
+
+  document.getElementById("adminModal").style.display = "block";
+}
+async function deleteSection(sectionId) {
+  const section = adminSections.find(
+    x => Number(x.SectionID) === Number(sectionId)
+  );
+
+  const label = section
+    ? [
+        section.SectionName,
+        section.SubSectionName,
+        section.SubSubSectionName
+      ].filter(Boolean).join(" / ")
+    : "this record";
+
+  if (!confirm(
+    `Delete ${label || "this Section Catalog record"}? It will be hidden but retained in the database.`
+  )) return;
+
+  try {
+    await api(`/api/admin/sections/${sectionId}`, {
+      method: "DELETE"
+    });
+
+    await loadAdminSections();
+
+  } catch (e) {
+    alert("Delete failed: " + e.message);
+  }
+}
 // ---------- MODAL SUBMIT ----------
 
 async function submitAdminModal() {
@@ -1180,6 +1578,8 @@ async function submitAdminModal() {
     client:   "/api/admin/clients"    + (isEdit ? `/${ctx.id}` : ""),
     service:  "/api/admin/services"   + (isEdit ? `/${ctx.id}` : ""),
     industry: "/api/admin/industries" + (isEdit ? `/${ctx.id}` : ""),
+    section:  "/api/admin/sections"   + (isEdit ? `/${ctx.id}` : ""), // NEW
+
   }[ctx.type];
   const method = isEdit ? "PATCH" : "POST";
 
@@ -1258,6 +1658,8 @@ async function submitAdminModal() {
         ClientType: document.getElementById("indType").value.trim(),
         Industry: document.getElementById("indName").value.trim(),
       };
+    } else if (ctx.type === "section") {
+      payload = {};
     }
 
     await api(url, { method, body: JSON.stringify(payload) });
@@ -1296,5 +1698,25 @@ if (token) {
     .catch(() => {
       localStorage.removeItem("token");
       token = "";
+    });
+}
+function hideMainViews() {
+    const views = [
+        "homeDashboard",
+        "listView",
+        "tableView",
+        "missionView",
+        "teamTableView",
+        "adminView",
+        "adminTabSections",
+        "timeLogsView",
+        "noWork"
+    ];
+
+    views.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.style.display = "none";
+        }
     });
 }

@@ -4,9 +4,10 @@
   <meta charset="utf-8">
   <title>TymeNaro | Time Management</title>
   <link rel="icon" type="image/png" href="/static/images/TymeNaro_Small.png">
-  <link rel="stylesheet" href="/static/style.css?v=115">
+  <link rel="stylesheet" href="/static/style.css?v=116">
 </head>
 <body>
+  <!-- LOGIN -->
   <div id="loginContainer">
     <div class="brand-login">
       <img src="/static/images/TymeNaro_Small.png"
@@ -15,44 +16,65 @@
     </div>
     <h2 class="login-heading">Time Management</h2>
     <form id="loginForm" onsubmit="event.preventDefault(); doLogin();">
-      <input id="u" placeholder="Username" autocomplete="username" required>
-      <input id="p" type="password" placeholder="Password" autocomplete="current-password" required>
-      <button type="submit">Login</button>
-    </form>
-    <p class="muted" style="text-align: center;">Try lee / lee · aka / aka · mce / mce · min / min · agn / agn</p>
+ <select id="c" autocomplete="organization" required>
+    <option value="c.company_code">Loading companies...</option>
+</select>
+  <input id="u" placeholder="Username" autocomplete="username" required>
+  <input id="p" type="password" placeholder="Password" autocomplete="current-password" required>
+  <button type="submit">Login</button>
+</form>
+    <p class="muted" style="text-align: center;">
+      Try lee / lee · aka / aka · mce / mce · min / min · agn / agn
+    </p>
   </div>
 
+  <!-- MAIN APPLICATION -->
   <div id="app" style="display:none">
     <header class="brand-header">
       <img src="/static/images/TymeNaro_Small.png"
            alt="TymeNaro"
            class="brand-logo brand-logo-header">
       <div class="brand-header-title">
-        <h1>Time Management</h1>
-        <span>Precision. Intelligence. Performance.</span>
+        <h1 id="tenantName">Loading...</h1>
+        <span>Time Management</span>
       </div>
     </header>
+
     <div class="row">
       <b id="who"></b>
       <button onclick="doLogout()">Logout</button>
-
-      <button id="btnAdminPanel" onclick="showAdminPanel()" style="display:none; background: #2b6cb0; margin-left: auto;">Admin Panel</button>
-      <button id="btnDownloadLogs" onclick="downloadTimeLogs()" style="background: #e67e22; margin-left: auto;">Download Time Logs</button>
+      <!--<button id="btnAdminPanel"
+              onclick="showAdminPanel()"
+              style="display:none; background: #2b6cb0; margin-left: auto;">
+        Admin Panel
+      </button>-->
+      <button id="btnDownloadLogs"
+              onclick="downloadTimeLogs()"
+              style="background: #e67e22; margin-left: auto;">
+        Download Time Logs
+      </button>
     </div>
 
-    <div id="activeTimerBar" class="card" style="display:none; background: #e3f2fd; border-color: #90caf9; position: sticky; top: 10px; z-index: 100;">
+    <!-- ACTIVE TIMER -->
+    <div id="activeTimerBar"
+         class="card"
+         style="display:none; background: #e3f2fd; border-color: #90caf9; position: sticky; top: 10px; z-index: 100;">
       <div class="row" style="justify-content: space-between;">
         <div>
-          <b style="color: #1565c0;">⏱ Active Task:</b> <span id="timerTaskName"></span>
+          <b style="color: #1565c0;">⏱ Active Task:</b>
+          <span id="timerTaskName"></span>
         </div>
         <div style="font-size: 1.2em; font-weight: bold;">
           <span id="timerDisplay">00:00:00</span>
         </div>
-        <button onclick="stopTimer()" style="background: #e53935;">Stop Timer</button>
+        <button onclick="stopTimer()" style="background: #e53935;">
+          Stop Timer
+        </button>
       </div>
       <div id="timerAlert" class="muted" style="margin-top: 0.5em; display: none;"></div>
     </div>
 
+    <!-- NO WORK MESSAGE -->
     <div id="noWork" class="card" style="display:none">
       <b>No missions assigned to you yet.</b><br>
       <span class="muted">
@@ -60,39 +82,85 @@
       </span>
     </div>
 
+    <!-- ADMIN / MANAGEMENT HOME DASHBOARD -->
+    <div id="homeDashboard" style="display:none; margin-top:1.5em;">
+      <h2>Management Dashboard</h2>
+      <p class="muted">Welcome to TymeNaro. Select an area to continue.</p>
+
+      <div style="display:grid;
+                  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+                  gap:1.2em;
+                  margin-top:1.5em;">
+        <div class="card">
+          <h3>Mission Management</h3>
+          <p class="muted">View and monitor all company missions and their progress.</p>
+          <button onclick="openMissionWorkspace()" style="background:#2b6cb0;">
+            Open Missions
+          </button>
+        </div>
+
+        <div class="card">
+          <h3>Administration</h3>
+          <p class="muted">Manage teams, employees, clients, services and industries.</p>
+          <button onclick="openAdminSection('teams')" style="background:#2b6cb0;">
+            Open Administration
+          </button>
+        </div>
+
+        <div class="card">
+          <h3>Time Logs</h3>
+          <p class="muted">Review employee time logs and attendance records.</p>
+          <button onclick="showTimeLogs()" style="background:#8e44ad;">
+            View Time Logs
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- TIME LOGS TABLE VIEW WITH FILTERS -->
-    <div id="timeLogsView" style="display:none; background: white; padding: 1em; margin-top: 1em; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    <div id="timeLogsView"
+         style="display:none; background: white; padding: 1em; margin-top: 1em; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
       <div class="row" style="justify-content: space-between; margin-bottom: 1em;">
         <h2 style="margin: 0;">Time Logs</h2>
         <div>
-            <button onclick="showTimeLogs()" style="background: #2b6cb0; margin-right: 0.5em;">Refresh</button>
-            <button onclick="hideTimeLogs()" style="background:#666;">← Back to Missions</button>
+          <button onclick="showTimeLogs()"
+                  style="background: #2b6cb0; margin-right: 0.5em;">
+            Refresh
+          </button>
+          <button onclick="hideTimeLogs()" style="background:#666;">
+            ← Back to Dashboard
+          </button>
         </div>
       </div>
 
       <!-- FILTER BAR -->
-      <div class="card" style="background: #f9f9f9; padding: 0.8em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-bottom: 1em;">
+      <div class="card"
+           style="background: #f9f9f9; padding: 0.8em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-bottom: 1em;">
         <div style="flex: 1; min-width: 150px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Date</label>
-          <select id="filterLogDate" onchange="filterLogs()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterLogDate" onchange="filterLogs()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All Dates</option>
           </select>
         </div>
         <div style="flex: 1; min-width: 150px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Employee</label>
-          <select id="filterLogEmployee" onchange="filterLogs()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterLogEmployee" onchange="filterLogs()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All Employees</option>
           </select>
         </div>
         <div style="flex: 1; min-width: 150px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Task</label>
-          <select id="filterLogTask" onchange="filterLogs()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterLogTask" onchange="filterLogs()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All Tasks</option>
           </select>
         </div>
         <div style="flex: 0 0 120px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Status</label>
-          <select id="filterLogStatus" onchange="filterLogs()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterLogStatus" onchange="filterLogs()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All</option>
             <option value="Signed In">Signed In</option>
             <option value="Signed Out">Signed Out</option>
@@ -103,6 +171,7 @@
         </div>
       </div>
 
+      <!-- TIME LOGS TABLE -->
       <div style="overflow-x: auto;">
         <table style="width: 100%; border-collapse: collapse;">
           <thead>
@@ -123,37 +192,48 @@
 
     <!-- MAIN LIST VIEW -->
     <div id="listView">
-      <div id="filterContainer" style="display:none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 1em; gap: 1.5em;">
+      <div id="filterContainer"
+           style="display:none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-top: 1em; gap: 1.5em;">
         <div style="display: flex; align-items: center; gap: 1em;">
           <h2 id="myH" style="margin: 0;">My missions</h2>
-          <button onclick="toggleMissionView()" id="viewToggleBtn" style="background: #4caf50; font-size: 0.85em; padding: 0.3em 0.6em;">Show All Missions</button>
-          <button onclick="showTableView()" style="background: #2b6cb0; font-size: 0.85em; padding: 0.3em 0.6em;">View as Table</button>
-          <button id="btnViewLogs" onclick="showTimeLogs()" style="background: #8e44ad; font-size: 0.85em; padding: 0.3em 0.6em;">View Time Logs</button>
+          <button onclick="toggleMissionView()" id="viewToggleBtn"
+                  style="background: #4caf50; font-size: 0.85em; padding: 0.3em 0.6em;">Show All Missions</button>
+          <button onclick="showTableView()"
+                  style="background: #2b6cb0; font-size: 0.85em; padding: 0.3em 0.6em;">View as Table</button>
+          <button id="btnViewLogs" onclick="showTimeLogs()"
+                  style="background: #8e44ad; font-size: 0.85em; padding: 0.3em 0.6em;">View Time Logs</button>
         </div>
 
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1.5em;">
           <div class="searchable-dropdown" style="position: relative; width: 200px;">
-            <input type="text" id="clientFilterInput" placeholder="Filter by Client..." autocomplete="off"
+            <input type="text" id="clientFilterInput" placeholder="Filter by Client..."
+                   autocomplete="off"
                    style="width: 100%; padding: 0.5em; border: 1px solid #ccc; border-radius: 4px;">
             <div id="clientFilterList" class="dropdown-list" style="display: none;"></div>
           </div>
+
           <div style="display: flex; align-items: center; gap: 0.5em;">
             <label style="font-size: 0.9em; font-weight: bold;">FY:</label>
-            <input type="text" id="fiscalYearFilter" oninput="filterMissions()" placeholder="e.g. 2026" style="width: 80px; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" id="fiscalYearFilter" oninput="filterMissions()" placeholder="e.g. 2026"
+                   style="width: 80px; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
           </div>
+
           <div style="display: flex; align-items: center; gap: 0.5em;">
             <label style="font-size: 0.9em; font-weight: bold;">From:</label>
-            <input type="date" id="missionDateFrom" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="date" id="missionDateFrom" onchange="filterMissions()"
+                   style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <span style="font-size: 0.9em; font-weight: bold;">To:</span>
-            <input type="date" id="missionDateTo" onchange="filterMissions()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="date" id="missionDateTo" onchange="filterMissions()"
+                   style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
           </div>
         </div>
       </div>
 
       <div id="missions" style="margin-top: 1em;"></div>
 
-      <div id="allMissionsCard" style="display:none; margin-top: 2em; border-top: 2px dashed #ccc; padding-top: 1em;">
-        <h2>All Company Missions</h2>
+      <div id="allMissionsCard"
+           style="display:none; margin-top: 2em; border-top: 2px dashed #ccc; padding-top: 1em;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1em;flex-wrap:wrap;"><h2>All Company Missions</h2><button onclick="showHomeDashboard()" style="background:#666;">← Back to Dashboard</button></div>
         <div id="allMissions"></div>
       </div>
     </div>
@@ -185,31 +265,36 @@
 
     <div id="detail"></div>
 
+    <!-- MISSION VIEW -->
     <div id="missionView" style="display:none">
       <div style="margin-bottom: 1em;">
-        <button onclick="goBack()" style="background:#666;">← Back to missions</button>
+        <button onclick="isGlobalViewer() ? showHomeDashboard() : goBack()" style="background:#666;">← Back</button>
       </div>
-
       <div style="display: flex; align-items: center; gap: 1em; margin-bottom: 1em;">
         <h2 style="margin: 0;">My tasks</h2>
-        <button id="btnViewTeamTasks" onclick="showTeamTable()" style="background: #4caf50; font-size: 0.85em; padding: 0.3em 0.6em; display: none;">View Team Tasks</button>
+        <button id="btnViewTeamTasks" onclick="showTeamTable()"
+                style="background: #4caf50; font-size: 0.85em; padding: 0.3em 0.6em; display: none;">View Team Tasks</button>
       </div>
 
-      <div class="card" style="background: #f9f9f9; padding: 0.8em; overflow: visible; z-index: 50; display: flex; flex-wrap: wrap; gap: 2em; align-items: center;">
+      <div class="card"
+           style="background: #f9f9f9; padding: 0.8em; overflow: visible; z-index: 50; display: flex; flex-wrap: wrap; gap: 2em; align-items: center;">
         <div class="searchable-dropdown" style="position: relative; flex: 1; min-width: 250px;">
-          <input type="text" id="taskSearch" placeholder="Search tasks by name, section, or sub-section..." autocomplete="off"
+          <input type="text" id="taskSearch"
+                 placeholder="Search tasks by name, section, or sub-section..."
+                 autocomplete="off"
                  style="width: 100%; padding: 0.6em; box-sizing: border-box; font-size: 1em; border: 1px solid #ccc; border-radius: 4px;">
           <div id="taskSearchList" class="dropdown-list" style="display: none;"></div>
         </div>
 
         <div style="display: flex; align-items: center; gap: 0.5em;">
           <label style="font-size: 0.9em; font-weight: bold;">From:</label>
-          <input type="date" id="taskDateFrom" onchange="filterTasks()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <input type="date" id="taskDateFrom" onchange="filterTasks()"
+                 style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
           <span style="font-size: 0.9em; font-weight: bold;">To:</span>
-          <input type="date" id="taskDateTo" onchange="filterTasks()" style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <input type="date" id="taskDateTo" onchange="filterTasks()"
+                 style="padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
         </div>
       </div>
-
       <div id="taskList"></div>
     </div>
 
@@ -220,28 +305,33 @@
       </div>
       <h2>Team Tasks (Read-Only)</h2>
 
-      <div class="card" style="background: #f9f9f9; padding: 0.8em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-bottom: 1em;">
+      <div class="card"
+           style="background: #f9f9f9; padding: 0.8em; display: flex; flex-wrap: wrap; gap: 1em; align-items: center; margin-bottom: 1em;">
         <div style="flex: 1; min-width: 150px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Employee</label>
-          <select id="filterTeamEmployee" onchange="filterTeamTasks()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterTeamEmployee" onchange="filterTeamTasks()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All Employees</option>
           </select>
         </div>
         <div style="flex: 1; min-width: 150px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Section / SubSection</label>
-          <select id="filterTeamSection" onchange="filterTeamTasks()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterTeamSection" onchange="filterTeamTasks()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All Sections</option>
           </select>
         </div>
         <div style="flex: 1; min-width: 150px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Task Name</label>
-          <select id="filterTeamTaskName" onchange="filterTeamTasks()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterTeamTaskName" onchange="filterTeamTasks()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All Tasks</option>
           </select>
         </div>
         <div style="flex: 0 0 120px;">
           <label style="font-size: 0.85em; font-weight: bold; display: block; margin-bottom: 0.2em;">Status</label>
-          <select id="filterTeamStatus" onchange="filterTeamTasks()" style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
+          <select id="filterTeamStatus" onchange="filterTeamTasks()"
+                  style="width: 100%; padding: 0.4em; border: 1px solid #ccc; border-radius: 4px;">
             <option value="all">All</option>
             <option value="done">Done</option>
             <option value="pending">Pending</option>
@@ -274,16 +364,17 @@
     <div id="adminView" style="display:none">
       <div class="row" style="justify-content: space-between; align-items: center; margin-bottom: 1em;">
         <h2 style="margin: 0;">Administration</h2>
-        <button onclick="hideAdminPanel()" style="background:#666;">← Back to Mission List</button>
+        <button onclick="hideAdminPanel()" style="background:#666;">← Back to Dashboard</button>
       </div>
 
-      <!-- Tab selector -->
+      <!-- TAB SELECTOR -->
       <div style="margin-bottom:1em; display:flex; gap:.5em; flex-wrap:wrap;">
-        <button id="tabBtnTeams"      onclick="showAdminTab('teams')"      style="background:#2b6cb0;">Teams</button>
-        <button id="tabBtnEmployees"  onclick="showAdminTab('employees')"  style="background:#2b6cb0;">Employees</button>
-        <button id="tabBtnClients"    onclick="showAdminTab('clients')"    style="background:#2b6cb0;">Clients</button>
-        <button id="tabBtnServices"   onclick="showAdminTab('services')"   style="background:#2b6cb0;">Services</button>
+        <button id="tabBtnTeams" onclick="showAdminTab('teams')" style="background:#2b6cb0;">Teams</button>
+        <button id="tabBtnEmployees" onclick="showAdminTab('employees')" style="background:#2b6cb0;">Employees</button>
+        <button id="tabBtnClients" onclick="showAdminTab('clients')" style="background:#2b6cb0;">Clients</button>
+        <button id="tabBtnServices" onclick="showAdminTab('services')" style="background:#2b6cb0;">Services</button>
         <button id="tabBtnIndustries" onclick="showAdminTab('industries')" style="background:#2b6cb0;">Industries</button>
+        <button id="tabBtnSections" onclick="showAdminTab('sections')" style="background:#2b6cb0;">Section Catalog</button>
       </div>
 
       <!-- TEAMS TAB -->
@@ -378,11 +469,57 @@
           </table>
         </div>
       </div>
+      <!-- SECTION CATALOG TAB -->
+      <div id="adminTabSections" style="display:none;">
+        <div style="display:flex;flex-wrap:wrap;gap:.65em;align-items:end;margin-bottom:1em;">
+          <div style="min-width:180px;flex:1;">
+            <label for="sectionFilterIndustry" style="display:block;font-weight:bold;font-size:.9em;margin-bottom:.25em;">Industry</label>
+            <select id="sectionFilterIndustry" onchange="renderAdminSections()" style="width:100%;padding:.55em;">
+              <option value="all">All Industries</option>
+            </select>
+          </div>
+          <div style="min-width:180px;flex:1;">
+            <label for="sectionFilterService" style="display:block;font-weight:bold;font-size:.9em;margin-bottom:.25em;">Service</label>
+            <select id="sectionFilterService" onchange="renderAdminSections()" style="width:100%;padding:.55em;">
+              <option value="all">All Services</option>
+            </select>
+          </div>
+          <div style="min-width:220px;flex:2;">
+            <label for="sectionSearchInput" style="display:block;font-weight:bold;font-size:.9em;margin-bottom:.25em;">Search</label>
+            <input id="sectionSearchInput" type="search" placeholder="Search section, subsection, remarks..." oninput="renderAdminSections()" style="width:100%;box-sizing:border-box;padding:.55em;">
+          </div>
+          <button onclick="clearSectionFilters()" style="background:#666;">Clear Filters</button>
+          <button onclick="loadAdminSections()" style="background:#2b6cb0;">Refresh</button>
+          <button onclick="openSectionForm()" style="background:#4caf50;">+ New Section</button>
+        </div>
+        <div id="sectionCatalogCount" class="muted" style="margin:.5em 0;"></div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;min-width:1050px;border-collapse:collapse;margin-top:.5em;background:#fff;">
+            <thead>
+              <tr style="background:#eee;text-align:left;">
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Industry</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Service</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Section</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Subsection</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Sub-subsection</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;text-align:right;">Default Hours</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Remarks</th>
+                <th style="padding:.7em;border-bottom:2px solid #ccc;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminSectionsBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
-    <!-- Generic admin modal -->
-    <div id="adminModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000;">
-      <div class="card" style="max-width:600px; margin:5em auto; background:#fff; padding:1.5em; border-radius:8px; max-height:80vh; overflow:auto;">
+
+     
+    <!-- GENERIC ADMIN MODAL -->
+    <div id="adminModal"
+         style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000;">
+      <div class="card"
+           style="max-width:600px; margin:5em auto; background:#fff; padding:1.5em; border-radius:8px; max-height:80vh; overflow:auto;">
         <h3 id="adminModalTitle" style="margin-top:0;"></h3>
         <div id="adminModalFields"></div>
         <div style="margin-top:1em; text-align:right; display:flex; gap:.5em; justify-content:flex-end;">
@@ -391,10 +528,10 @@
         </div>
       </div>
     </div>
-
   </div>
 
+  <!-- JAVASCRIPT -->
   <!-- Cache buster — bump whenever app.js or style.css changes -->
-  <script src="/static/app.js?v=114"></script>
+  <script src="/static/app.js?v=117"></script>
 </body>
 </html>

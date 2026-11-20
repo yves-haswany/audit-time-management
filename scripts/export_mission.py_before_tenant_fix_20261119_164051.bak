@@ -1,0 +1,238 @@
+
+"""Tenant-safe Excel round-trip exporter.
+
+Reads a mission from the database and writes the current state of the
+Adopted / Launched / Suspended / Accomplished booleans and the
+Sign-in/out date+time columns back into a copy of the mission Excel file.
+
+The source workbook formatting and other cells are preserved.
+"""
+from __future__ import annotations
+
+import sys
+from datetime import datetime, time
+from io import BytesIO
+from pathlib import Path
+
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from openpyxl import load_workbook  # noqa: E402
+
+from config import MIS_XLS  # noqa: E402
+from core.database import connect  # noqa: E402
+
+
+SHEET_NAME = "Yves_TemplateMission"
+
+COL_ADOPTED = "L"
+COL_LAUNCHED = "M"
+COL_SUSPENDED = "N"
+COL_ACCOMPLISHED = "O"
+COL_SIGNINDATE = "P"
+COL_SIGNINTIME = "Q"
+COL_SIGNOUTDATE = "R"
+COL_SIGNOUTTIME = "S"
+
+
+def _excel_row(pandas_index: int) -> int:
+    return pandas_index + 2
+
+
+def _parse_date(dt_str: str | None):
+    if not dt_str:
+        return None
+
+    try:
+        return datetime.fromisoformat(str(dt_str)).date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_time(dt_str: str | None):
+    if not dt_str:
+        return None
+
+    try:
+        value = str(dt_str)
+
+        if len(value) <= 8 and ":" in value:
+            dt = datetime.strptime(value, "%H:%M:%S")
+        else:
+            dt = datetime.fromisoformat(value)
+
+        return time(dt.hour, dt.minute)
+
+    except (ValueError, TypeError):
+        return None
+
+
+def _fetch_mission_state(
+    mission_id: int,
+    tenant_id: int
+) -> list[dict]:
+    """Fetch task reporting data only for a mission owned by this tenant."""
+
+    c = connect()
+
+    try:
+        mission = c.execute(
+            """
+            SELECT MissionID
+            FROM Mission
+            WHERE MissionID = ?
+              AND TenantID = ?
+            """,
+            (mission_id, tenant_id)
+        ).fetchone()
+
+        if not mission:
+            raise ValueError("Mission not found.")
+
+        rows = c.execute(
+            """
+            SELECT
+                t.TaskID,
+                t.ExcelRow,
+                t.Adopted,
+                t.Launched,
+                t.Suspended,
+                t.Accomplished,
+                ts.Signindate,
+                ts.Signintime,
+                ts.Signoutdate,
+                ts.Signouttime,
+                (
+                    SELECT ws.JobDesc
+                    FROM WorkSession ws
+                    WHERE ws.TaskID = t.TaskID
+                      AND ws.JobDesc IS NOT NULL
+                    ORDER BY ws.SessionID DESC
+                    LIMIT 1
+                ) AS LatestJobDesc
+            FROM MissionTask t
+            LEFT JOIN TaskSignTimes ts
+                ON ts.TaskID = t.TaskID
+            INNER JOIN Mission m
+                ON m.MissionID = t.MissionID
+            WHERE t.MissionID = ?
+              AND m.TenantID = ?
+            ORDER BY t.ExcelRow
+            """,
+            (mission_id, tenant_id)
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        c.close()
+
+
+def _write_row(ws, excel_row: int, state: dict) -> None:
+    ws[f"{COL_ADOPTED}{excel_row}"] = bool(state["Adopted"])
+    ws[f"{COL_LAUNCHED}{excel_row}"] = bool(state["Launched"])
+    ws[f"{COL_SUSPENDED}{excel_row}"] = bool(state["Suspended"])
+    ws[f"{COL_ACCOMPLISHED}{excel_row}"] = bool(state["Accomplished"])
+
+    if state.get("LatestJobDesc"):
+        ws[f"K{excel_row}"] = state["LatestJobDesc"]
+
+    ws[f"{COL_SIGNINDATE}{excel_row}"] = _parse_date(
+        state["Signindate"]
+    )
+    ws[f"{COL_SIGNOUTDATE}{excel_row}"] = _parse_date(
+        state["Signoutdate"]
+    )
+
+    signin_cell = ws[f"{COL_SIGNINTIME}{excel_row}"]
+    signin_cell.value = _parse_time(state["Signintime"])
+    signin_cell.number_format = "hh:mm"
+
+    signout_cell = ws[f"{COL_SIGNOUTTIME}{excel_row}"]
+    signout_cell.value = _parse_time(state["Signouttime"])
+    signout_cell.number_format = "hh:mm"
+
+
+def export_mission_to_bytes(
+    mission_id: int,
+    tenant_id: int
+) -> bytes:
+    """Return a mission workbook after validating tenant ownership."""
+
+    if tenant_id is None or int(tenant_id) <= 0:
+        raise ValueError("A valid tenant_id is required.")
+
+    states = _fetch_mission_state(
+        mission_id=mission_id,
+        tenant_id=int(tenant_id)
+    )
+
+    if not states:
+        raise ValueError(
+            f"No mission tasks found for MissionID={mission_id}"
+        )
+
+    if not Path(MIS_XLS).exists():
+        raise FileNotFoundError(
+            f"Mission Excel template not found: {MIS_XLS}"
+        )
+
+    wb = load_workbook(filename=MIS_XLS, keep_vba=False)
+
+    if SHEET_NAME in wb.sheetnames:
+        ws = wb[SHEET_NAME]
+    else:
+        ws = wb.worksheets[0]
+
+    for state in states:
+        row = _excel_row(state["ExcelRow"])
+        _write_row(ws, row, state)
+
+    buf = BytesIO()
+    wb.save(buf)
+
+    return buf.getvalue()
+
+
+def export_mission_to_path(
+    mission_id: int,
+    tenant_id: int,
+    out_path: str | Path
+) -> Path:
+    """Write a tenant-validated mission export to disk."""
+
+    data = export_mission_to_bytes(
+        mission_id=mission_id,
+        tenant_id=tenant_id
+    )
+
+    out_path = Path(out_path)
+    out_path.write_bytes(data)
+
+    return out_path
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Export a tenant-owned mission to Excel."
+    )
+
+    parser.add_argument("--mission-id", type=int, required=True)
+    parser.add_argument("--tenant-id", type=int, required=True)
+    parser.add_argument("--out", required=True)
+
+    args = parser.parse_args()
+
+    output_path = export_mission_to_path(
+        mission_id=args.mission_id,
+        tenant_id=args.tenant_id,
+        out_path=args.out
+    )
+
+    print(
+        f"[export] wrote {output_path} "
+        f"({output_path.stat().st_size} bytes) "
+        f"for MissionID={args.mission_id}, TenantID={args.tenant_id}"
+    )

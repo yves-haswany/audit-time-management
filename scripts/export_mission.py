@@ -1,17 +1,11 @@
-"""Excel round-trip exporter.
 
-Reads the DB for a mission and writes the current state of the
+"""Tenant-safe Excel round-trip exporter.
+
+Reads a mission from the database and writes the current state of the
 Adopted / Launched / Suspended / Accomplished booleans and the
-Sign-in/out date+time columns back into a copy of the mission Excel
-file. Everything else (columns A-K, formatting, row order) is
-preserved exactly as in the source.
+Sign-in/out date+time columns back into a copy of the mission Excel file.
 
-Usage from Python:
-    from scripts.export_mission import export_mission_to_bytes
-    data = export_mission_to_bytes(mission_id=12)
-
-Usage from CLI:
-    python scripts/export_mission.py --mission-id 12 --out exported.xlsx
+The source workbook formatting and other cells are preserved.
 """
 from __future__ import annotations
 
@@ -20,126 +14,182 @@ from datetime import datetime, time
 from io import BytesIO
 from pathlib import Path
 
-# Allow running as a script (python scripts/export_mission.py ...)
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from openpyxl import load_workbook      # noqa: E402
+from openpyxl import load_workbook  # noqa: E402
 
-from config import MIS_XLS              # noqa: E402
-from core.database import connect       # noqa: E402
+from config import MIS_XLS, INITIAL_TENANT_ID  # noqa: E402
+from core.database import connect_tenant  # noqa: E402
 
 
 SHEET_NAME = "Yves_TemplateMission"
 
-# Excel column letters for the fields we overwrite.
-#   L = Adopted, M = Launched, N = Suspended, O = Accomplished
-#   P = Signindate, Q = Signintime, R = Signoutdate, S = Signouttime
-COL_ADOPTED      = "L"
-COL_LAUNCHED     = "M"
-COL_SUSPENDED    = "N"
+COL_ADOPTED = "L"
+COL_LAUNCHED = "M"
+COL_SUSPENDED = "N"
 COL_ACCOMPLISHED = "O"
-COL_SIGNINDATE   = "P"
-COL_SIGNINTIME   = "Q"
-COL_SIGNOUTDATE  = "R"
-COL_SIGNOUTTIME  = "S"
+COL_SIGNINDATE = "P"
+COL_SIGNINTIME = "Q"
+COL_SIGNOUTDATE = "R"
+COL_SIGNOUTTIME = "S"
 
-# Excel row 1 is the header. The importer stored `ExcelRow` as the
-# 0-based pandas index (0 for the first data row), which corresponds to
-# Excel row = ExcelRow + 2.
+
 def _excel_row(pandas_index: int) -> int:
     return pandas_index + 2
 
+
 def _parse_date(dt_str: str | None):
-    """Extract just the date object from the DB timestamp."""
     if not dt_str:
         return None
+
     try:
-        return datetime.fromisoformat(dt_str).date()
-    except ValueError:
+        return datetime.fromisoformat(str(dt_str)).date()
+    except (ValueError, TypeError):
         return None
+
 
 def _parse_time(dt_str: str | None):
-    """Extract just the HH:MM time object from the DB timestamp (dropping seconds)."""
     if not dt_str:
         return None
+
     try:
-        # Handle the case where SQLite returns just the time (e.g., "14:32:05")
-        if len(dt_str) <= 8 and ":" in dt_str:
-            dt = datetime.strptime(dt_str, "%H:%M:%S")
+        value = str(dt_str)
+
+        if len(value) <= 8 and ":" in value:
+            dt = datetime.strptime(value, "%H:%M:%S")
         else:
-            # Handle full ISO timestamps just in case
-            dt = datetime.fromisoformat(dt_str)
-            
-        return time(dt.hour, dt.minute)  # Create time object with 0 seconds
-    except ValueError:
+            dt = datetime.fromisoformat(value)
+
+        return time(dt.hour, dt.minute)
+
+    except (ValueError, TypeError):
         return None
 
-def _fetch_mission_state(mission_id: int) -> list[dict]:
-    """Return one dict per mission task with the data we'll write back."""
-    c = connect()
-    rows = c.execute(
-        """
-        SELECT
-            t.TaskID,
-            t.ExcelRow,
-            t.Adopted,
-            t.Launched,
-            t.Suspended,
-            t.Accomplished,
-            ts.Signindate,
-            ts.Signintime,
-            ts.Signoutdate,
-            ts.Signouttime,
-            (SELECT JobDesc FROM WorkSession ws 
-             WHERE ws.TaskID = t.TaskID AND ws.JobDesc IS NOT NULL 
-             ORDER BY ws.SessionID DESC LIMIT 1) AS LatestJobDesc
-        FROM MissionTask t
-        LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-        WHERE t.MissionID = ?
-        ORDER BY t.ExcelRow
-        """,
-        (mission_id,),
-    ).fetchall()
-    c.close()
-    return [dict(r) for r in rows]
+
+def _fetch_mission_state(
+    mission_id: int,
+    tenant_id: int
+) -> list[dict]:
+    """Fetch task reporting data only for a mission owned by this tenant."""
+
+    c = connect_tenant(tenant_id)
+
+    try:
+        mission = c.execute(
+            """
+            SELECT MissionID
+            FROM Mission
+            WHERE MissionID = ?
+              AND TenantID = ?
+            """,
+            (mission_id, tenant_id)
+        ).fetchone()
+
+        if not mission:
+            raise ValueError("Mission not found.")
+
+        rows = c.execute(
+            """
+            SELECT
+                t.TaskID,
+                t.ExcelRow,
+                t.Adopted,
+                t.Launched,
+                t.Suspended,
+                t.Accomplished,
+                ts.Signindate,
+                ts.Signintime,
+                ts.Signoutdate,
+                ts.Signouttime,
+                (
+                    SELECT ws.JobDesc
+                    FROM WorkSession ws
+                    WHERE ws.TaskID = t.TaskID
+                      AND ws.JobDesc IS NOT NULL
+                    ORDER BY ws.SessionID DESC
+                    LIMIT 1
+                ) AS LatestJobDesc
+            FROM MissionTask t
+            LEFT JOIN TaskSignTimes ts
+                ON ts.TaskID = t.TaskID
+            INNER JOIN Mission m
+                ON m.MissionID = t.MissionID
+            WHERE t.MissionID = ?
+              AND m.TenantID = ?
+            ORDER BY t.ExcelRow
+            """,
+            (mission_id, tenant_id)
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        c.close()
+
 
 def _write_row(ws, excel_row: int, state: dict) -> None:
-    """Overwrite the reporting cells for one task row."""
-    ws[f"{COL_ADOPTED}{excel_row}"]      = bool(state["Adopted"])
-    ws[f"{COL_LAUNCHED}{excel_row}"]     = bool(state["Launched"])
-    ws[f"{COL_SUSPENDED}{excel_row}"]    = bool(state["Suspended"])
+    ws[f"{COL_ADOPTED}{excel_row}"] = bool(state["Adopted"])
+    ws[f"{COL_LAUNCHED}{excel_row}"] = bool(state["Launched"])
+    ws[f"{COL_SUSPENDED}{excel_row}"] = bool(state["Suspended"])
     ws[f"{COL_ACCOMPLISHED}{excel_row}"] = bool(state["Accomplished"])
 
-    # Write the JobDesc into column K if one exists
     if state.get("LatestJobDesc"):
         ws[f"K{excel_row}"] = state["LatestJobDesc"]
 
-    # Write the Dates
-    ws[f"{COL_SIGNINDATE}{excel_row}"]  = _parse_date(state["Signindate"])
-    ws[f"{COL_SIGNOUTDATE}{excel_row}"] = _parse_date(state["Signoutdate"])
+    ws[f"{COL_SIGNINDATE}{excel_row}"] = _parse_date(
+        state["Signindate"]
+    )
+    ws[f"{COL_SIGNOUTDATE}{excel_row}"] = _parse_date(
+        state["Signoutdate"]
+    )
 
-    # Write the Times and FORCE Excel to only display hh:mm
     signin_cell = ws[f"{COL_SIGNINTIME}{excel_row}"]
     signin_cell.value = _parse_time(state["Signintime"])
-    signin_cell.number_format = 'hh:mm'
+    signin_cell.number_format = "hh:mm"
 
     signout_cell = ws[f"{COL_SIGNOUTTIME}{excel_row}"]
     signout_cell.value = _parse_time(state["Signouttime"])
-    signout_cell.number_format = 'hh:mm'
+    signout_cell.number_format = "hh:mm"
 
-def export_mission_to_bytes(mission_id: int) -> bytes:
-    """Return the filled-in workbook as bytes (ready for HTTP download)."""
-    states = _fetch_mission_state(mission_id)
+
+def export_mission_to_bytes(
+    mission_id: int,
+    tenant_id: int
+) -> bytes:
+    """Return a mission workbook after validating tenant ownership."""
+
+    if tenant_id is None or int(tenant_id) <= 0:
+        raise ValueError("A valid tenant_id is required.")
+
+    if int(tenant_id) != INITIAL_TENANT_ID:
+        raise ValueError(
+            "The configured mission Excel template belongs exclusively "
+            "to Fiduciaire du Moyen Orient (Tenant 1). "
+            "Other tenants must use their own mission template."
+        )
+
+    states = _fetch_mission_state(
+        mission_id=mission_id,
+        tenant_id=int(tenant_id)
+    )
+
     if not states:
-        raise ValueError(f"No mission tasks found for MissionID={mission_id}")
+        raise ValueError(
+            f"No mission tasks found for MissionID={mission_id}"
+        )
 
-    # Load the source workbook, keeping formatting and every other cell.
+    if not Path(MIS_XLS).exists():
+        raise FileNotFoundError(
+            f"Mission Excel template not found: {MIS_XLS}"
+        )
+
     wb = load_workbook(filename=MIS_XLS, keep_vba=False)
-    if SHEET_NAME not in wb.sheetnames:
-        ws = wb.worksheets[0]
-    else:
+
+    if SHEET_NAME in wb.sheetnames:
         ws = wb[SHEET_NAME]
+    else:
+        ws = wb.worksheets[0]
 
     for state in states:
         row = _excel_row(state["ExcelRow"])
@@ -147,23 +197,49 @@ def export_mission_to_bytes(mission_id: int) -> bytes:
 
     buf = BytesIO()
     wb.save(buf)
+
     return buf.getvalue()
 
-def export_mission_to_path(mission_id: int, out_path: str | Path) -> Path:
-    """CLI helper — writes the file to disk and returns the path."""
-    data = export_mission_to_bytes(mission_id)
+
+def export_mission_to_path(
+    mission_id: int,
+    tenant_id: int,
+    out_path: str | Path
+) -> Path:
+    """Write a tenant-validated mission export to disk."""
+
+    data = export_mission_to_bytes(
+        mission_id=mission_id,
+        tenant_id=tenant_id
+    )
+
     out_path = Path(out_path)
     out_path.write_bytes(data)
+
     return out_path
+
 
 if __name__ == "__main__":
     import argparse
 
-    ap = argparse.ArgumentParser(description="Export a mission to Excel.")
-    ap.add_argument("--mission-id", type=int, required=True)
-    ap.add_argument("--out", required=True)
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Export a tenant-owned mission to Excel."
+    )
 
-    p = export_mission_to_path(args.mission_id, args.out)
-    print(f"[export] wrote {p} "
-          f"({p.stat().st_size} bytes) for MissionID={args.mission_id}")
+    parser.add_argument("--mission-id", type=int, required=True)
+    parser.add_argument("--tenant-id", type=int, required=True)
+    parser.add_argument("--out", required=True)
+
+    args = parser.parse_args()
+
+    output_path = export_mission_to_path(
+        mission_id=args.mission_id,
+        tenant_id=args.tenant_id,
+        out_path=args.out
+    )
+
+    print(
+        f"[export] wrote {output_path} "
+        f"({output_path.stat().st_size} bytes) "
+        f"for MissionID={args.mission_id}, TenantID={args.tenant_id}"
+    )

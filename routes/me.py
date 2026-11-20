@@ -1,9 +1,13 @@
+
 from fastapi import APIRouter, Depends
+
 from core.dependencies import current_user
-from core.database import connect
+from core.database import connect_tenant
 from services import mission_service
 
+
 router = APIRouter(prefix="/api/me", tags=["me"])
+
 
 @router.get("")
 def get_me(user=Depends(current_user)):
@@ -12,69 +16,123 @@ def get_me(user=Depends(current_user)):
         "Username": user["Username"],
         "Classification": user.get("Classification", ""),
         "IsTeamLead": user.get("IsTeamLead", 0),
-        "TeamLeader": user.get("TeamLeader", "")
+        "TeamLeader": user.get("TeamLeader", ""),
+        "TenantID": user["TenantID"],
+        "CompanyName": user.get("CompanyName", ""),
+        "CompanyCode": user.get("CompanyCode", ""),
     }
+
 
 @router.get("/summary")
 def summary(user=Depends(current_user)):
-    s = mission_service.summary(user["EmployeeID"])
+    result = mission_service.summary(
+        user["EmployeeID"],
+        user["TenantID"],
+    )
+
     return {
         "EmployeeName": user["EmployeeName"],
-        "Username":     user["Username"],
-        **s,
+        "Username": user["Username"],
+        **result,
     }
+
 
 @router.get("/missions")
 def my_missions(user=Depends(current_user)):
-    classification = str(user.get("Classification", "")).strip().lower()
-    
-    if classification in ["team leader", "administrator"]:
-        c = connect()
-        team = c.execute("SELECT EmployeeID FROM Employee WHERE TeamLeader = ?", (user["EmployeeName"],)).fetchall()
-        c.close()
-        
-        employee_ids = [t["EmployeeID"] for t in team]
-        employee_ids.append(user["EmployeeID"])
-        
-        all_missions = []
-        for eid in employee_ids:
-            all_missions.extend(mission_service.list_missions(eid))
-            
-        unique_missions = {m["MissionID"]: m for m in all_missions}.values()
-        return list(unique_missions)
-        
-    return mission_service.list_missions(user["EmployeeID"])
+    tenant_id = user["TenantID"]
+    employee_id = user["EmployeeID"]
 
-# ONLY returns the current user's tasks for the "My tasks" view
+    classification = str(
+        user.get("Classification", "")
+    ).strip().lower()
+
+    if classification in ("team leader", "administrator"):
+        c = connect_tenant(tenant_id)
+
+        try:
+            team = c.execute(
+                """
+                SELECT EmployeeID
+                FROM Employee
+                WHERE TeamLeader = ?
+                  AND IsActive = 1
+                """,
+                (user["EmployeeName"],),
+            ).fetchall()
+
+            employee_ids = [
+                row["EmployeeID"] for row in team
+            ]
+
+        finally:
+            c.close()
+
+        employee_ids.append(employee_id)
+
+        all_missions = []
+
+        for eid in employee_ids:
+            all_missions.extend(
+                mission_service.list_missions(eid, tenant_id)
+            )
+
+        unique_missions = {
+            mission["MissionID"]: mission
+            for mission in all_missions
+        }
+
+        return list(unique_missions.values())
+
+    return mission_service.list_missions(
+        employee_id,
+        tenant_id,
+    )
+
+
 @router.get("/missions/{mid}/tasks")
 def my_mission_tasks(mid: int, user=Depends(current_user)):
-    c = connect()
-    rows = c.execute("""
-        SELECT t.*, t.TeamMemberName as EmployeeName, 
-               ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
-        FROM MissionTask t
-        LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-        WHERE t.MissionID = ? AND t.EmployeeID = ?
-        ORDER BY t.TaskID
-    """, (mid, user["EmployeeID"])).fetchall()
-    c.close()
-    return [dict(r) for r in rows]
+    return mission_service.tasks(
+        user["EmployeeID"],
+        mid,
+        user["TenantID"],
+    )
 
-# Returns ALL tasks for the mission (for the "View Team Tasks" read-only table)
+
 @router.get("/missions/{mid}/team-tasks")
 def team_mission_tasks(mid: int, user=Depends(current_user)):
-    classification = str(user.get("Classification", "")).strip().lower()
-    if classification not in ["team leader", "administrator"]:
+    classification = str(
+        user.get("Classification", "")
+    ).strip().lower()
+
+    if classification not in ("team leader", "administrator"):
         return []
-        
-    c = connect()
-    rows = c.execute("""
-        SELECT t.*, t.TeamMemberName as EmployeeName, 
-               ts.Signindate, ts.Signintime, ts.Signoutdate, ts.Signouttime
-        FROM MissionTask t
-        LEFT JOIN TaskSignTimes ts ON ts.TaskID = t.TaskID
-        WHERE t.MissionID = ?
-        ORDER BY t.TaskID
-    """, (mid,)).fetchall()
-    c.close()
-    return [dict(r) for r in rows]
+
+    tenant_id = user["TenantID"]
+    c = connect_tenant(tenant_id)
+
+    try:
+        rows = c.execute(
+            """
+            SELECT
+                t.*,
+                t.TeamMemberName AS EmployeeName,
+                ts.Signindate,
+                ts.Signintime,
+                ts.Signoutdate,
+                ts.Signouttime
+            FROM MissionTask t
+            JOIN Mission m
+                ON m.MissionID = t.MissionID
+            LEFT JOIN TaskSignTimes ts
+                ON ts.TaskID = t.TaskID
+            WHERE t.MissionID = ?
+              AND m.TenantID = ?
+            ORDER BY t.TaskID
+            """,
+            (mid, tenant_id),
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+    finally:
+        c.close()

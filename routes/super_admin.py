@@ -1,134 +1,869 @@
-# routes/super_admin.py
+
+"""Central Super Admin routes for TymeNaro.
+
+Super Admin can manage tenant accounts and view aggregate statistics.
+No individual tenant operational records are exposed through these routes.
+"""
+
+import re
+import sqlite3
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from core.database import connect
-from core.security import hash_password, verify_password, generate_token
-from core.dependencies import current_user
+from pydantic import BaseModel, Field
 
-router = APIRouter(prefix="/api/super-admin", tags=["super-admin"])
+from config import TENANT_DB_DIR, tenant_db_path
+from core.database import (
+    connect_master,
+    connect_tenant,
+    init_tenant_db,
+)
+from core.dependencies import current_super_admin
+from core.security import hash_password
 
-class AdminLogin(BaseModel):
-    username: str
-    password: str
+
+router = APIRouter(
+    prefix="/api/super-admin",
+    tags=["super-admin"],
+)
+
 
 class TenantCreate(BaseModel):
-    company_name: str
-    industry: str
-    admin_username: str
-    admin_password: str
+    company_name: str = Field(min_length=2, max_length=200)
+    company_code: str = Field(min_length=2, max_length=12)
+    industry: str = Field(min_length=1, max_length=100)
+    admin_username: str = Field(min_length=2, max_length=100)
+    admin_password: str = Field(min_length=8)
 
-# --- Super Admin Login ---
-@router.post("/login")
-def super_admin_login(body: AdminLogin):
-    c = connect()
-    row = c.execute(
-        "SELECT * FROM Employee WHERE LOWER(Username) = LOWER(?) AND Classification = 'SuperAdmin'", 
-        (body.username.strip(),)
-    ).fetchone()
-    
-    if not row or not verify_password(body.password, row["PasswordHash"]):
-        c.close()
-        raise HTTPException(401, "Invalid Super Admin credentials")
-        
-    token = generate_token()
-    c.execute("INSERT INTO Token VALUES (?,?,?)", (token, row["EmployeeID"], "2026-01-01T00:00:00"))
-    c.commit()
-    c.close()
-    
-    return {"token": token, "name": row["EmployeeName"]}
 
-# --- PROTECTED: Create Tenant ---
-@router.post("/tenants")
-def create_tenant(data: TenantCreate, user=Depends(current_user)):
-    if user.get("Classification") != "SuperAdmin":
-        raise HTTPException(403, "Access denied. Super Admin only.")
-        
-    c = connect()
-    try:
-        # 1. Create Tenant
-        c.execute("INSERT INTO Tenant (CompanyName, Industry) VALUES (?, ?)", 
-                  (data.company_name, data.industry))
-        tenant_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
-                
-        # 2. Create Admin User for this Tenant
-        c.execute("""
-            INSERT INTO Employee (TenantID, EmployeeName, Username, PasswordHash, Classification)
-            VALUES (?, ?, ?, ?, 'Administrator')
-        """, (tenant_id, f"{data.company_name} Admin", data.admin_username, hash_password(data.admin_password)))
-        
-        c.commit()
-        return {"ok": True, "tenant_id": tenant_id}
-    except Exception as e:
-        c.rollback()
-        raise HTTPException(400, str(e))
-    finally:
-        c.close()
-@router.get("/tenants")
-def list_tenants(user=Depends(current_user)):
-    if user.get("Classification") != "SuperAdmin":
-        raise HTTPException(403, "Access denied.")
-    
-    c = connect()
-    rows = c.execute("""
-        SELECT t.TenantID, t.CompanyName, t.Industry, COUNT(e.EmployeeID) as EmployeeCount
-        FROM Tenant t
-        LEFT JOIN Employee e ON e.TenantID = t.TenantID
-        GROUP BY t.TenantID
-    """).fetchall()
-    c.close()
-    return [dict(r) for r in rows]
-# Add this Pydantic model
 class TenantUpdate(BaseModel):
-    company_name: str
-    industry: str
-    admin_username: str | None = None
-    admin_password: str | None = None
+    company_name: str | None = Field(default=None, min_length=2, max_length=200)
+    company_code: str | None = Field(default=None, min_length=2, max_length=12)
+    industry: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+    admin_username: str | None = Field(default=None, min_length=2, max_length=100)
+    admin_password: str | None = Field(default=None, min_length=8)
 
-# Add this endpoint to routes/super_admin.py
-@router.put("/tenants/{tenant_id}")
-def update_tenant(tenant_id: int, data: TenantUpdate, user=Depends(current_user)):
-    if user.get("Classification") != "SuperAdmin":
-        raise HTTPException(403, "Access denied. Super Admin only.")
-        
-    c = connect()
+
+def _validate_company_code(value: str) -> str:
+    code = value.strip().upper()
+
+    if not re.fullmatch(r"[A-Z0-9_-]{2,12}", code):
+        raise HTTPException(
+            status_code=400,
+            detail="Company Code must contain 2-12 letters, numbers, hyphens or underscores.",
+        )
+
+    return code
+
+
+def _mark_tenant_inactive(tenant_id: int) -> None:
+    """Disable a tenant centrally after an incomplete creation attempt."""
+
+    master = connect_master()
+
     try:
-        # 1. Update the Tenant details
-        c.execute("UPDATE Tenant SET CompanyName = ?, Industry = ? WHERE TenantID = ?", 
-                  (data.company_name, data.industry, tenant_id))
-        
-        # 2. If a new Admin Username/Password is provided, update the Admin
-        if data.admin_username and data.admin_password:
-            # Find the admin of this tenant
-            admin = c.execute("SELECT EmployeeID FROM Employee WHERE TenantID = ? AND Classification = 'Administrator'", (tenant_id,)).fetchone()
-            
-            if admin:
-                c.execute("UPDATE Employee SET Username = ?, PasswordHash = ? WHERE EmployeeID = ?", 
-                          (data.admin_username, hash_password(data.admin_password), admin["EmployeeID"]))
-            else:
-                # If no admin exists for some reason, create one
-                c.execute("""
-                    INSERT INTO Employee (TenantID, EmployeeName, Username, PasswordHash, Classification)
-                    VALUES (?, ?, ?, ?, 'Administrator')
-                """, (tenant_id, f"{data.company_name} Admin", data.admin_username, hash_password(data.admin_password)))
-        
-        c.commit()
-        return {"ok": True}
-    except Exception as e:
-        c.rollback()
-        raise HTTPException(400, str(e))
+        master.execute(
+            """
+            UPDATE TenantDirectory
+            SET IsActive = 0
+            WHERE TenantID = ?
+            """,
+            (tenant_id,),
+        )
+        master.commit()
+
+    except Exception:
+        master.rollback()
+        raise
+
     finally:
-        c.close()
-@router.get("/tenants/{tenant_id}/employees")
-def get_tenant_employees(tenant_id: int, user=Depends(current_user)):
-    if user.get("Classification") != "SuperAdmin":
-        raise HTTPException(403, "Access denied.")
-    
-    c = connect()
-    rows = c.execute("""
-        SELECT EmployeeName, Username, Classification, TeamLeader 
-        FROM Employee 
-        WHERE TenantID = ?
-        ORDER BY Classification, EmployeeName
-    """, (tenant_id,)).fetchall()
-    c.close()
-    return [dict(r) for r in rows]
+        master.close()
+
+
+def _tenant_statistics(tenant: dict) -> dict:
+    """Return aggregate counts only, never individual company records."""
+
+    result = {
+        "TenantID": tenant["TenantID"],
+        "CompanyName": tenant["CompanyName"],
+        "CompanyCode": tenant["CompanyCode"],
+        "Industry": tenant["Industry"],
+        "IsActive": bool(tenant["IsActive"]),
+        "CreatedAt": tenant["CreatedAt"],
+        "EmployeeCount": None,
+        "ClientCount": None,
+        "MissionCount": None,
+        "DatabaseStatus": "unavailable",
+    }
+
+    try:
+        db = connect_tenant(int(tenant["TenantID"]))
+
+        try:
+            identities = db.execute(
+                "SELECT TenantID FROM Tenant"
+            ).fetchall()
+
+            if (
+                len(identities) != 1
+                or int(identities[0]["TenantID"]) != int(tenant["TenantID"])
+            ):
+                return result
+
+            for table, key in (
+                ("Employee", "EmployeeCount"),
+                ("Client", "ClientCount"),
+                ("Mission", "MissionCount"),
+            ):
+                result[key] = db.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()[0]
+
+            result["DatabaseStatus"] = "healthy"
+
+        finally:
+            db.close()
+
+    except Exception:
+        # Do not expose database errors or company records.
+        pass
+
+    return result
+
+
+@router.post("/tenants")
+def create_tenant(
+    data: TenantCreate,
+    user=Depends(current_super_admin),
+):
+    """Reserve, initialize, and create a new independent tenant."""
+
+    company_name = data.company_name.strip()
+    company_code = _validate_company_code(data.company_code)
+    industry = data.industry.strip()
+    admin_username = data.admin_username.strip()
+
+    if not company_name or not industry or not admin_username:
+        raise HTTPException(
+            status_code=400,
+            detail="All company and administrator fields are required.",
+        )
+
+    # Step 1: Reserve a unique tenant ID and master directory entry.
+    # BEGIN IMMEDIATE prevents concurrent requests from allocating the same ID.
+    master = connect_master()
+    tenant_id = None
+
+    try:
+        master.execute("BEGIN IMMEDIATE")
+
+        tenant_id = int(
+            master.execute(
+                """
+                SELECT COALESCE(MAX(TenantID), 0) + 1
+                FROM TenantDirectory
+                """
+            ).fetchone()[0]
+        )
+
+        while tenant_db_path(tenant_id).exists():
+            tenant_id += 1
+
+        database_file = tenant_db_path(tenant_id).name
+
+        master.execute(
+            """
+            INSERT INTO TenantDirectory (
+                TenantID,
+                CompanyName,
+                CompanyCode,
+                Industry,
+                IsActive,
+                DatabaseFile
+            )
+            VALUES (?, ?, ?, ?, 1, ?)
+            """,
+            (
+                tenant_id,
+                company_name,
+                company_code,
+                industry,
+                database_file,
+            ),
+        )
+
+        master.commit()
+
+    except sqlite3.IntegrityError:
+        master.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Company Code or company information conflicts with an existing record.",
+        )
+
+    except Exception as exc:
+        master.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not reserve the company account: {exc}",
+        )
+
+    finally:
+        master.close()
+
+    # Step 2: Initialize the new tenant database and its administrator.
+    # Never delete the database if initialization fails. Preserve it for inspection.
+    try:
+        init_tenant_db(
+            tenant_id=tenant_id,
+            company_name=company_name,
+            industry=industry,
+        )
+
+        db = connect_tenant(tenant_id)
+
+        try:
+            identities = db.execute(
+                "SELECT TenantID FROM Tenant"
+            ).fetchall()
+
+            if (
+                len(identities) != 1
+                or int(identities[0]["TenantID"]) != tenant_id
+            ):
+                raise RuntimeError(
+                    "New tenant database identity validation failed."
+                )
+
+            db.execute(
+                """
+                INSERT INTO Employee (
+                    TenantID,
+                    EmployeeName,
+                    LoginCode,
+                    Username,
+                    PasswordHash,
+                    IsActive,
+                    IsTeamLead,
+                    Classification
+                )
+                VALUES (?, ?, ?, ?, ?, 1, 0, 'Administrator')
+                """,
+                (
+                    tenant_id,
+                    f"{company_name} Admin",
+                    admin_username,
+                    admin_username,
+                    hash_password(data.admin_password),
+                ),
+            )
+
+            db.commit()
+
+        except Exception:
+            db.rollback()
+            raise
+
+        finally:
+            db.close()
+
+        return {
+            "ok": True,
+            "tenant_id": tenant_id,
+            "company_name": company_name,
+            "company_code": company_code,
+            "message": "Company and administrator created successfully.",
+        }
+
+    except sqlite3.IntegrityError:
+        _mark_tenant_inactive(tenant_id)
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Company initialization encountered a duplicate record. "
+                "The tenant has been marked inactive and its database "
+                "preserved for inspection."
+            ),
+        )
+
+    except Exception as exc:
+        _mark_tenant_inactive(tenant_id)
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Company initialization failed. The tenant has been "
+                "marked inactive. Any created database file has been "
+                f"preserved for inspection. Details: {exc}"
+            ),
+        )
+
+
+@router.get("/tenants")
+def list_tenants(user=Depends(current_super_admin)):
+    """List company accounts and aggregate counts only."""
+
+    master = connect_master()
+
+    try:
+        tenants = master.execute(
+            """
+            SELECT
+                TenantID,
+                CompanyName,
+                CompanyCode,
+                Industry,
+                IsActive,
+                CreatedAt
+            FROM TenantDirectory
+            ORDER BY TenantID
+            """
+        ).fetchall()
+
+        results = [
+            _tenant_statistics(dict(tenant))
+            for tenant in tenants
+        ]
+
+        return {
+            "tenants": results,
+            "totals": {
+                "Companies": len(results),
+                "ActiveCompanies": sum(
+                    t["IsActive"] for t in results
+                ),
+                "InactiveCompanies": sum(
+                    not t["IsActive"] for t in results
+                ),
+                "Employees": sum(
+                    t["EmployeeCount"] or 0 for t in results
+                ),
+                "Clients": sum(
+                    t["ClientCount"] or 0 for t in results
+                ),
+                "Missions": sum(
+                    t["MissionCount"] or 0 for t in results
+                ),
+            },
+            "statistics_complete": all(
+                t["DatabaseStatus"] == "healthy"
+                for t in results
+            ),
+        }
+
+    finally:
+        master.close()
+
+
+@router.put("/tenants/{tenant_id}")
+def update_tenant(
+    tenant_id: int,
+    data: TenantUpdate,
+    user=Depends(current_super_admin),
+):
+    """Update tenant directory and tenant identity atomically."""
+
+    if tenant_id <= 0:
+        raise HTTPException(400, "Invalid tenant ID.")
+
+    if not any(
+        value is not None
+        for value in (
+            data.company_name,
+            data.company_code,
+            data.industry,
+            data.is_active,
+            data.admin_username,
+            data.admin_password,
+        )
+    ):
+        raise HTTPException(400, "No changes were supplied.")
+
+    if (data.admin_username is None) != (data.admin_password is None):
+        raise HTTPException(
+            400,
+            "Provide both administrator username and password when changing administrator credentials.",
+        )
+
+    company_name = (
+        data.company_name.strip()
+        if data.company_name is not None
+        else None
+    )
+
+    industry = (
+        data.industry.strip()
+        if data.industry is not None
+        else None
+    )
+
+    company_code = (
+        _validate_company_code(data.company_code)
+        if data.company_code is not None
+        else None
+    )
+
+    admin_username = (
+        data.admin_username.strip()
+        if data.admin_username is not None
+        else None
+    )
+
+    if company_name == "":
+        raise HTTPException(400, "Company name cannot be blank.")
+
+    if industry == "":
+        raise HTTPException(400, "Industry cannot be blank.")
+
+    if admin_username == "":
+        raise HTTPException(400, "Administrator username cannot be blank.")
+
+    new_admin_hash = (
+        hash_password(data.admin_password)
+        if data.admin_password is not None
+        else None
+    )
+
+    master = connect_master()
+
+    try:
+        existing = master.execute(
+            """
+            SELECT
+                TenantID,
+                CompanyName,
+                CompanyCode,
+                Industry,
+                IsActive,
+                DatabaseFile
+            FROM TenantDirectory
+            WHERE TenantID = ?
+            """,
+            (tenant_id,),
+        ).fetchone()
+
+        if not existing:
+            raise HTTPException(404, "Company not found.")
+
+        old = dict(existing)
+
+        new_name = company_name or old["CompanyName"]
+        new_industry = industry or old["Industry"]
+        new_code = company_code or old["CompanyCode"]
+
+        new_active = (
+            int(data.is_active)
+            if data.is_active is not None
+            else int(old["IsActive"])
+        )
+
+        expected_path = tenant_db_path(tenant_id)
+
+        if old["DatabaseFile"] != expected_path.name:
+            raise HTTPException(
+                409,
+                "Tenant database filename does not match its registered identity.",
+            )
+
+        if not expected_path.is_file():
+            raise HTTPException(
+                409,
+                "Tenant database file is missing.",
+            )
+
+        # Attach the tenant database to the master connection.
+        # Both databases can then participate in the same SQLite transaction.
+        master.execute(
+            "ATTACH DATABASE ? AS tenantdb",
+            (str(expected_path.resolve()),),
+        )
+
+        try:
+            master_mode = master.execute(
+                "PRAGMA main.journal_mode"
+            ).fetchone()[0].lower()
+
+            tenant_mode = master.execute(
+                "PRAGMA tenantdb.journal_mode"
+            ).fetchone()[0].lower()
+
+            allowed_modes = {"delete", "truncate", "persist"}
+
+            if (
+                master_mode not in allowed_modes
+                or tenant_mode not in allowed_modes
+            ):
+                raise HTTPException(
+                    409,
+                    "Both databases must use a rollback-journal mode for an atomic tenant update.",
+                )
+
+            master.execute("BEGIN IMMEDIATE")
+
+            identities = master.execute(
+                """
+                SELECT TenantID
+                FROM tenantdb.Tenant
+                """
+            ).fetchall()
+
+            if (
+                len(identities) != 1
+                or int(identities[0]["TenantID"]) != tenant_id
+            ):
+                raise HTTPException(
+                    409,
+                    "Tenant database identity mismatch.",
+                )
+
+            # Update the tenant identity.
+            master.execute(
+                """
+                UPDATE tenantdb.Tenant
+                SET CompanyName = ?,
+                    Industry = ?,
+                    IsActive = ?
+                WHERE TenantID = ?
+                """,
+                (
+                    new_name,
+                    new_industry,
+                    new_active,
+                    tenant_id,
+                ),
+            )
+
+            # Update the first administrator, if credentials were supplied.
+            if admin_username is not None:
+                admin = master.execute(
+                    """
+                    SELECT EmployeeID, EmployeeName
+                    FROM tenantdb.Employee
+                    WHERE LOWER(Classification) = 'administrator'
+                    ORDER BY EmployeeID
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+                if admin:
+                    old_admin_name = f"{old['CompanyName']} Admin"
+                    new_admin_name = (
+                        f"{new_name} Admin"
+                        if admin["EmployeeName"] == old_admin_name
+                        else admin["EmployeeName"]
+                    )
+
+                    master.execute(
+                        """
+                        UPDATE tenantdb.Employee
+                        SET Username = ?,
+                            LoginCode = ?,
+                            PasswordHash = ?,
+                            EmployeeName = ?
+                        WHERE EmployeeID = ?
+                        """,
+                        (
+                            admin_username,
+                            admin_username,
+                            new_admin_hash,
+                            new_admin_name,
+                            admin["EmployeeID"],
+                        ),
+                    )
+
+                else:
+                    master.execute(
+                        """
+                        INSERT INTO tenantdb.Employee (
+                            TenantID,
+                            EmployeeName,
+                            LoginCode,
+                            Username,
+                            PasswordHash,
+                            IsActive,
+                            IsTeamLead,
+                            Classification
+                        )
+                        VALUES (?, ?, ?, ?, ?, 1, 0, 'Administrator')
+                        """,
+                        (
+                            tenant_id,
+                            f"{new_name} Admin",
+                            admin_username,
+                            admin_username,
+                            new_admin_hash,
+                        ),
+                    )
+
+            # Update the central directory in the same transaction.
+            master.execute(
+                """
+                UPDATE main.TenantDirectory
+                SET CompanyName = ?,
+                    CompanyCode = ?,
+                    Industry = ?,
+                    IsActive = ?
+                WHERE TenantID = ?
+                """,
+                (
+                    new_name,
+                    new_code,
+                    new_industry,
+                    new_active,
+                    tenant_id,
+                ),
+            )
+
+            master.commit()
+
+        except Exception:
+            master.rollback()
+            raise
+
+        return {
+            "ok": True,
+            "tenant_id": tenant_id,
+            "message": "Company information updated successfully.",
+        }
+
+    except sqlite3.IntegrityError:
+        master.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Company Code or administrator username is already "
+                "in use. No changes were committed."
+            ),
+        )
+
+    except HTTPException:
+        master.rollback()
+        raise
+
+    except Exception as exc:
+        master.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Company update failed. No changes were committed: {exc}",
+        )
+
+    finally:
+        master.close()
+
+
+class TenantDelete(BaseModel):
+    confirmation_company_code: str
+
+
+@router.delete("/tenants/{tenant_id}")
+def delete_tenant(
+    tenant_id: int,
+    data: TenantDelete,
+    user=Depends(current_super_admin),
+):
+    """
+    Permanently delete one tenant and its database.
+
+    The tenant is deactivated and its employee sessions revoked first.
+    The tenant database is identity-checked before its file is deleted.
+    The master directory record is deleted only after the database file
+    has been successfully removed.
+    """
+
+    if tenant_id <= 0:
+        raise HTTPException(400, "Invalid tenant ID.")
+
+    confirmation_code = data.confirmation_company_code.strip().upper()
+
+    master = connect_master()
+
+    try:
+        existing = master.execute(
+            """
+            SELECT TenantID, CompanyName, CompanyCode,
+                   DatabaseFile, IsActive
+            FROM TenantDirectory
+            WHERE TenantID = ?
+            """,
+            (tenant_id,),
+        ).fetchone()
+
+        if not existing:
+            raise HTTPException(404, "Company not found.")
+
+        tenant = dict(existing)
+
+        if confirmation_code != tenant["CompanyCode"].upper():
+            raise HTTPException(
+                400,
+                "Company Code confirmation does not match. Nothing was deleted.",
+            )
+
+        expected_filename = f"tenant_{tenant_id}.db"
+
+        if tenant["DatabaseFile"] != expected_filename:
+            raise HTTPException(
+                409,
+                "Registered database filename does not match the tenant ID. "
+                "Deletion was stopped.",
+            )
+
+        database_path = tenant_db_path(tenant_id).resolve()
+        tenant_directory = TENANT_DB_DIR.resolve()
+
+        if database_path.parent != tenant_directory:
+            raise HTTPException(
+                409,
+                "Tenant database path is outside the configured tenant directory.",
+            )
+
+        if database_path.name != expected_filename:
+            raise HTTPException(
+                409,
+                "Unexpected tenant database filename. Deletion was stopped.",
+            )
+
+        if not database_path.is_file():
+            raise HTTPException(
+                409,
+                "Tenant database file is missing. The directory record was retained.",
+            )
+
+        # Stage 1: Disable the tenant and revoke only its employee sessions.
+        # This prevents new authenticated access while deletion proceeds.
+        try:
+            master.execute("BEGIN IMMEDIATE")
+
+            master.execute(
+                """
+                UPDATE TenantDirectory
+                SET IsActive = 0
+                WHERE TenantID = ?
+                """,
+                (tenant_id,),
+            )
+
+            master.execute(
+                """
+                DELETE FROM AuthSession
+                WHERE UserType = 'employee'
+                  AND TenantID = ?
+                """,
+                (tenant_id,),
+            )
+
+            master.commit()
+
+        except Exception:
+            master.rollback()
+            raise
+
+        # Stage 2: Verify the database identity before deleting its file.
+        # connect_tenant opens only the registered tenant database.
+        db = None
+
+        try:
+            db = connect_tenant(tenant_id)
+
+            identities = db.execute(
+                "SELECT TenantID FROM Tenant"
+            ).fetchall()
+
+            if (
+                len(identities) != 1
+                or int(identities[0]["TenantID"]) != tenant_id
+            ):
+                raise HTTPException(
+                    409,
+                    "Tenant database identity validation failed. "
+                    "The database file was preserved and the tenant remains inactive.",
+                )
+
+        finally:
+            if db is not None:
+                db.close()
+
+        # Stage 3: Delete only the verified tenant database file.
+        # If Windows reports that the file is in use, retain the master
+        # directory entry in its inactive state for inspection and retry.
+        try:
+            database_path.unlink()
+        except OSError as exc:
+            raise HTTPException(
+                500,
+                "The tenant has been deactivated, but its database file "
+                "could not be deleted. The master directory record was "
+                f"retained. Close any application using the file and retry. Details: {exc}",
+            )
+
+        if database_path.exists():
+            raise HTTPException(
+                500,
+                "The tenant database file still exists. The tenant remains "
+                "inactive and its master directory record was retained.",
+            )
+
+        # Stage 4: Remove dependent master records, then the directory row.
+        # Super Admin accounts and Super Admin sessions are untouched.
+        try:
+            master.execute("BEGIN IMMEDIATE")
+
+            master.execute(
+                """
+                DELETE FROM AuthSession
+                WHERE UserType = 'employee'
+                  AND TenantID = ?
+                """,
+                (tenant_id,),
+            )
+
+            master.execute(
+                """
+                DELETE FROM ImportLog
+                WHERE TenantID = ?
+                """,
+                (tenant_id,),
+            )
+
+            master.execute(
+                """
+                DELETE FROM TenantDirectory
+                WHERE TenantID = ?
+                """,
+                (tenant_id,),
+            )
+
+            if master.execute(
+                "SELECT changes()"
+            ).fetchone()[0] != 1:
+                raise RuntimeError(
+                    "Expected exactly one tenant directory record to be deleted."
+                )
+
+            master.commit()
+
+        except Exception as exc:
+            master.rollback()
+
+            raise HTTPException(
+                500,
+                "The tenant database file was deleted, but its master "
+                "directory record could not be removed. The remaining "
+                "inactive record has been retained for manual inspection. "
+                f"Details: {exc}",
+            )
+
+        return {
+            "ok": True,
+            "tenant_id": tenant_id,
+            "company_name": tenant["CompanyName"],
+            "message": (
+                "Company and tenant database permanently deleted successfully."
+            ),
+        }
+
+    finally:
+        master.close()
